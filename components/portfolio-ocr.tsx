@@ -131,7 +131,7 @@ export function PortfolioOCR({ onAddStocks }: PortfolioOCRProps) {
         <CardHeader>
           <CardTitle>Step 2: AI Analysis</CardTitle>
           <CardDescription>
-            Using Groq AI to extract stock scrip, quantity, and average price.
+            Using OCR + Advanced LLM to extract stock scrip, quantity, and average price.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col items-center justify-center space-y-6 py-12">

@@ -5,3 +5,7 @@ pandas==2.1.3
 python-dateutil==2.8.2
 requests==2.31.0
 nsepython
+groq==0.4.2
+pillow==10.1.0
+pytesseract==0.3.10
+pdf2image==1.16.3

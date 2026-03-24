@@ -374,7 +374,8 @@ import time
 
 # nsepython wraps NSE's official API with proper headers/cookies
 from nsepython import nse_quote, nsefetch
-
+from dotenv import load_dotenv
+load_dotenv()
 # Import rounding utilities for financial accuracy
 from rounding import (
     round_money, round_percent, round_price,
@@ -773,6 +774,10 @@ async def get_portfolio(data: Dict):
         "totalPnlPercent": round_percent(total_pnl_pct),
     }
 
+    return {
+        "holdings": results,
+        "summary": summary
+    }
 
 
 @app.post("/api/stocks/scenarios")
@@ -900,6 +905,180 @@ async def get_portfolio_scenarios(data: Dict):
             },
         }
     }
+
+
+@app.post("/api/portfolio/extract")
+async def extract_portfolio_from_image(data: Dict):
+    """
+    Extract portfolio holdings from an image using OCR.
+    
+    Flow:
+    1. Receive base64 image
+    2. Use pytesseract to extract text from image
+    3. Send extracted text to Groq's text model with detailed prompt
+    4. Parse LLM response to extract symbol, qty, buyPrice
+    5. Return structured portfolio data
+    
+    Body: {"image": "data:image/png;base64,iVBOR..."}
+    """
+    import base64
+    import io
+    import json
+    import os
+    from PIL import Image
+    import pytesseract
+    from groq import Groq
+
+    try:
+        image_data = data.get("image")
+        if not image_data:
+            raise ValueError("No image provided")
+
+        # Extract base64 data
+        if "base64," in image_data:
+            image_data = image_data.split("base64,")[1]
+
+        # Decode base64 to image
+        image_bytes = base64.b64decode(image_data)
+        image = Image.open(io.BytesIO(image_bytes))
+
+        # Convert to RGB if necessary (handles PNG with transparency, etc.)
+        if image.mode != "RGB":
+            image = image.convert("RGB")
+
+        logger.info("🖼️ Image received, extracting text via OCR...")
+
+        # Step 1: Extract text using Tesseract OCR
+        extracted_text = pytesseract.image_to_string(image)
+        logger.info(f"📄 OCR extracted text:\n{extracted_text[:500]}...")
+
+        if not extracted_text.strip():
+            return {
+                "success": True,
+                "data": [],
+                "message": "No text detected in image. Please upload a clearer screenshot."
+            }
+
+        # Step 2: Send extracted text to Groq for LLM processing
+        groq_key = os.getenv("GROQ_API_KEY")
+        if not groq_key:
+            raise ValueError("GROQ_API_KEY not configured")
+
+        client = Groq(api_key=groq_key)
+
+        prompt = f"""You are a financial portfolio extraction expert. Analyze the provided text extracted from a portfolio screenshot and extract ALL stock holdings.
+
+EXTRACTED TEXT:
+{extracted_text}
+
+TASK:
+1. Identify all stock holdings (symbol, quantity, buy price)
+2. Extract NSE stock symbols (e.g., HDFCBANK, INFY, RELIANCE)
+3. Extract quantity and buy price for each holding
+
+RULES:
+- Use NSE stock symbols without .NS suffix
+- Return ONLY a JSON array, no markdown, no extra text
+- Symbol must be valid NSE symbol (uppercase)
+- Qty must be a number (integer)
+- buyPrice must be a number (can have decimals)
+- If no portfolio data found, return: []
+
+RESPONSE FORMAT:
+[
+  {{"symbol": "HDFCBANK", "qty": 100, "buyPrice": 1234.56}},
+  {{"symbol": "ITC", "qty": 50, "buyPrice": 567.89}}
+]
+
+Extract all visible holdings. Be thorough - look for all occurrences of stock symbols, quantities, and prices."""
+
+        logger.info("🤖 Sending extracted text to Groq LLM...")
+
+        response = client.chat.completions.create(
+            model="llama-3.1-70b-versatile",  # Robust text model (not vision)
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            temperature=0.1,
+            max_tokens=2000
+        )
+
+        response_text = response.choices[0].message.content.strip()
+        logger.info(f"🤖 LLM Response:\n{response_text}")
+
+        # Step 3: Parse JSON response
+        extracted_stocks = []
+        try:
+            # Try direct parsing
+            extracted_stocks = json.loads(response_text)
+        except json.JSONDecodeError:
+            # Try to extract JSON from response
+            import re
+            json_match = re.search(r'\[[\s\S]*\]', response_text)
+            if json_match:
+                try:
+                    extracted_stocks = json.loads(json_match.group(0))
+                except json.JSONDecodeError:
+                    logger.warning(f"Could not parse JSON from response: {response_text}")
+                    extracted_stocks = []
+
+        if not isinstance(extracted_stocks, list):
+            extracted_stocks = []
+
+        # Step 4: Validate and normalize
+        validated_stocks = []
+        for item in extracted_stocks:
+            try:
+                symbol = str(item.get("symbol", "")).upper().replace(".NS", "").replace(".BO", "").strip()
+                qty_str = str(item.get("qty", 0)).replace(",", "").strip()
+                price_str = str(item.get("buyPrice", 0)).replace(",", "").strip()
+
+                qty = int(float(qty_str)) if qty_str else 0
+                buy_price = float(price_str) if price_str else 0.0
+
+                if symbol and qty > 0 and buy_price > 0:
+                    validated_stocks.append({
+                        "symbol": symbol,
+                        "qty": qty,
+                        "buyPrice": round(buy_price, 2)
+                    })
+                    logger.info(f"✓ Extracted: {symbol} x{qty} @ ₹{buy_price}")
+            except (ValueError, TypeError) as e:
+                logger.warning(f"Skipping invalid item {item}: {e}")
+                continue
+
+        if not validated_stocks:
+            return {
+                "success": True,
+                "data": [],
+                "message": "No valid stock holdings found in the image. Please check if the screenshot clearly shows your portfolio with symbol, quantity, and price."
+            }
+
+        logger.info(f"✅ Successfully extracted {len(validated_stocks)} stocks")
+        return {
+            "success": True,
+            "data": validated_stocks,
+            "message": f"Successfully extracted {len(validated_stocks)} stocks from your portfolio image"
+        }
+
+    except Exception as e:
+        logger.error(f"Portfolio extraction error: {e}", exc_info=True)
+        error_msg = str(e)
+
+        # More helpful error messages
+        if "No such file or directory" in error_msg and "tesseract" in error_msg.lower():
+            error_msg = "OCR library not installed. Please install tesseract-ocr on your system."
+        elif "GROQ_API_KEY" in error_msg:
+            error_msg = "Groq API key not configured on backend."
+
+        return {
+            "success": False,
+            "error": error_msg,
+            "message": "Failed to extract portfolio from image. " + error_msg
+        }
 
 
 @app.get("/api/stocks/cache/status")

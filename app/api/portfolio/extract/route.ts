@@ -9,123 +9,42 @@ interface StockHolding {
 export async function POST(req: NextRequest) {
   try {
     const { image } = await req.json()
-    const apiKey = process.env.GROQ_API_KEY
-
-    if (!apiKey) {
-      return NextResponse.json({ error: "Groq API key not configured" }, { status: 500 })
-    }
 
     if (!image) {
       return NextResponse.json({ error: "No image provided" }, { status: 400 })
     }
 
-    // Extract base64 data (handle data:image/... format)
-    let imageBase64 = image
-    if (image.includes("base64,")) {
-      imageBase64 = image.split("base64,")[1]
-    }
+    // Get Python backend URL from environment
+    const backendUrl = process.env.PYTHON_BACKEND_URL || "http://0.0.0.0:7860"
+    const extractUrl = `${backendUrl}/api/portfolio/extract`
 
-    // Get media type from data URL if available
-    let mediaType = "image/jpeg"
-    if (image.includes("data:image/")) {
-      mediaType = image.match(/data:(image\/[a-z]+);/)?.[1] || "image/jpeg"
-    }
+    console.log(`📤 Proxying portfolio extraction to Python backend: ${extractUrl}`)
 
-    // Call Groq Vision API (Llama 3.2 Vision 90B)
-    const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    // Forward request to Python backend
+    const backendResponse = await fetch(extractUrl, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${apiKey}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({
-        model: "llama-3.2-11b-vision-preview",
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "image_url",
-                image_url: {
-                  url: `data:${mediaType};base64,${imageBase64}`
-                }
-              },
-              {
-                type: "text",
-                text: `You are a financial portfolio extraction expert. Analyze this portfolio screenshot and extract ALL stock holdings visible.
-
-IMPORTANT: Extract ONLY stocks that are clearly shown in the image.
-
-Return a JSON array with this exact format (no markdown, just raw JSON):
-[
-  { "symbol": "STOCKNAME", "qty": 100, "buyPrice": 1234.56 },
-  { "symbol": "ANOTHER", "qty": 50, "buyPrice": 5678.90 }
-]
-
-Rules:
-1. symbol: Use NSE stock symbol (e.g., HDFCBANK, INFY, ITC, RELIANCE)
-2. qty: Number of units (integer)
-3. buyPrice: Average/buy price per unit (number with decimals)
-4. Return ONLY the JSON array, no other text
-5. If no portfolio data is found, return: []
-
-Extract all visible holdings from the image.`
-              }
-            ]
-          }
-        ],
-        temperature: 0.1,
-        max_tokens: 2000
-      })
+      body: JSON.stringify({ image })
     })
 
-    if (!groqResponse.ok) {
-      const error = await groqResponse.json()
-      console.error("Groq API error:", error)
+    if (!backendResponse.ok) {
+      const error = await backendResponse.json()
+      console.error("Backend extraction error:", error)
       
-      // Check if it's a decommissioned model error
-      if (error.error?.code === "model_decommissioned") {
-        return NextResponse.json({ 
-          error: "Portfolio extraction temporarily unavailable due to model update. Please try again in a few moments." 
-        }, { status: 503 })
-      }
-      
-      // Check if it's a rate limit error
-      if (error.error?.code === "rate_limit_exceeded") {
-        return NextResponse.json({ 
-          error: "Too many extraction requests. Please wait a moment and try again." 
-        }, { status: 429 })
-      }
-      
-      return NextResponse.json({ 
-        error: error.error?.message || "Failed to process image with Groq Vision. Please try uploading a clearer portfolio screenshot." 
-      }, { status: 500 })
+      return NextResponse.json(
+        { error: error.error || error.message || "Failed to extract portfolio" },
+        { status: backendResponse.status }
+      )
     }
 
-    const groqResult = await groqResponse.json()
-    const responseText = groqResult.choices?.[0]?.message?.content || ""
-
-    // Parse the response - extract JSON array
-    let extractedStocks: StockHolding[] = []
+    const result = await backendResponse.json()
     
-    try {
-      // Try direct parsing first
-      extractedStocks = JSON.parse(responseText)
-    } catch {
-      // If that fails, try to extract JSON from the response
-      const jsonMatch = responseText.match(/\[[\s\S]*\]/)
-      if (jsonMatch) {
-        try {
-          extractedStocks = JSON.parse(jsonMatch[0])
-        } catch {
-          console.warn("Could not parse extracted JSON:", responseText)
-          extractedStocks = []
-        }
-      }
-    }
+    console.log(`✅ Backend returned ${result.data?.length || 0} stocks`)
 
-    // Validate and normalize the data
-    const validatedStocks = extractedStocks
+    // Validate and normalize the data from backend
+    const validatedStocks = (result.data || [])
       .filter((item: any) => {
         return item.symbol && (item.qty || item.qty === 0) && (item.buyPrice || item.buyPrice === 0)
       })
@@ -140,14 +59,14 @@ Extract all visible holdings from the image.`
       return NextResponse.json({ 
         success: true,
         data: [],
-        message: "No portfolio data found in the image. Please try another screenshot showing your stock holdings." 
+        message: result.message || "No portfolio data found in the image. Please try another screenshot showing your stock holdings." 
       })
     }
 
     return NextResponse.json({ 
       success: true, 
       data: validatedStocks,
-      message: `Successfully extracted ${validatedStocks.length} stocks from your portfolio image`
+      message: result.message || `Successfully extracted ${validatedStocks.length} stocks from your portfolio image`
     })
 
   } catch (error: any) {
