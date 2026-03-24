@@ -49,17 +49,22 @@ export function PortfolioOCR({ onAddStocks }: PortfolioOCRProps) {
         headers: { "Content-Type": "application/json" }
       })
 
-      if (!response.ok) throw new Error("Extraction failed")
-      
       const result = await response.json()
+      
+      if (!response.ok) {
+        throw new Error(result.error || `Extraction failed (${response.status})`)
+      }
+      
       if (result.success && result.data) {
         setExtractedData(result.data)
         toast.success("Portfolio extracted successfully!")
+      } else if (result.data && result.data.length === 0) {
+        toast.error("No portfolio data found in the image. Please try a clearer screenshot showing your stock holdings.")
       } else {
         throw new Error(result.error || "Failed to extract data")
       }
-    } catch (error) {
-      toast.error("Failed to extract portfolio details. Please try again.")
+    } catch (error: any) {
+      toast.error(error?.message || "Failed to extract portfolio details. Please try again.")
     } finally {
       setIsUploading(false)
     }

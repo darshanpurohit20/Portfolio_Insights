@@ -82,7 +82,24 @@ Extract all visible holdings from the image.`
     if (!groqResponse.ok) {
       const error = await groqResponse.json()
       console.error("Groq API error:", error)
-      return NextResponse.json({ error: "Failed to process image with Groq Vision" }, { status: 500 })
+      
+      // Check if it's a decommissioned model error
+      if (error.error?.code === "model_decommissioned") {
+        return NextResponse.json({ 
+          error: "Portfolio extraction temporarily unavailable due to model update. Please try again in a few moments." 
+        }, { status: 503 })
+      }
+      
+      // Check if it's a rate limit error
+      if (error.error?.code === "rate_limit_exceeded") {
+        return NextResponse.json({ 
+          error: "Too many extraction requests. Please wait a moment and try again." 
+        }, { status: 429 })
+      }
+      
+      return NextResponse.json({ 
+        error: error.error?.message || "Failed to process image with Groq Vision. Please try uploading a clearer portfolio screenshot." 
+      }, { status: 500 })
     }
 
     const groqResult = await groqResponse.json()
