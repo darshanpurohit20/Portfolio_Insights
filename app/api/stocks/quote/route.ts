@@ -29,9 +29,9 @@ export async function GET(req: NextRequest) {
     await Promise.all(
       symbolList.map(async (symbol) => {
         try {
-          // Add timeout to prevent long-hanging requests
+          // Add timeout to prevent long-hanging requests (30 second timeout for Yahoo Finance)
           const timeoutPromise = new Promise((_, reject) =>
-            setTimeout(() => reject(new Error(`Request timeout for ${symbol}`)), 10000)
+            setTimeout(() => reject(new Error(`Request timeout for ${symbol}`)), 30000)
           )
 
           const quotePromise = yf.quote(symbol)
@@ -54,18 +54,22 @@ export async function GET(req: NextRequest) {
             close: q.close,
           }))
 
+        const currentPrice = quote?.regularMarketPrice || 0
+        
         results[symbol] = {
           symbol,
-          currentPrice: quote.regularMarketPrice || 0,
-          dayHigh: quote.regularMarketDayHigh || 0,
-          dayLow: quote.regularMarketDayLow || 0,
-          high52w: quote.fiftyTwoWeekHigh || 0,
-          low52w: quote.fiftyTwoWeekLow || 0,
-          previousClose: quote.regularMarketPreviousClose || 0,
-          change: quote.regularMarketChange || 0,
-          changePercent: quote.regularMarketChangePercent || 0,
+          currentPrice,
+          dayHigh: quote?.regularMarketDayHigh || 0,
+          dayLow: quote?.regularMarketDayLow || 0,
+          high52w: quote?.fiftyTwoWeekHigh || 0,
+          low52w: quote?.fiftyTwoWeekLow || 0,
+          previousClose: quote?.regularMarketPreviousClose || 0,
+          change: quote?.regularMarketChange || 0,
+          changePercent: quote?.regularMarketChangePercent || 0,
           history: historyData,
         }
+        
+        console.log(`[${symbol}] Price: ${currentPrice}`)
       } catch (err) {
         console.error(`Error fetching ${symbol}:`, err)
         results[symbol] = {
@@ -80,6 +84,7 @@ export async function GET(req: NextRequest) {
           changePercent: 0,
           history: [],
           error: true,
+          errorMsg: (err as any)?.message
         }
       }
     })
