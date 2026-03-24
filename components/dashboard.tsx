@@ -9,9 +9,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { PortfolioSummary } from "@/components/portfolio-summary"
 import { PortfolioTable } from "@/components/portfolio-table"
 import { StockCards } from "@/components/stock-cards"
+import { PortfolioOCR } from "@/components/portfolio-ocr"
 import { AddStockDialog } from "@/components/add-stock-dialog"
 import { PriceAlerts } from "@/components/price-alerts"
-import { TrendingUp, Plus, LogOut, RefreshCw, LayoutGrid, TableIcon } from "lucide-react"
+import { TrendingUp, Plus, LogOut, RefreshCw, LayoutGrid, TableIcon, FileSearch } from "lucide-react"
 import type { PortfolioStock, PortfolioItem, PriceAlert } from "@/lib/types"
 
 const STORAGE_KEY = "stockfolio-portfolio"
@@ -242,6 +243,10 @@ export function Dashboard({ username }: { username: string }) {
                 <LayoutGrid className="h-3.5 w-3.5 mr-1" />
                 Cards
               </TabsTrigger>
+              <TabsTrigger value="ocr" className="data-[state=active]:bg-card data-[state=active]:text-foreground">
+                <FileSearch className="h-3.5 w-3.5 mr-1" />
+                AI Import
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="table" className="mt-4">
@@ -254,6 +259,10 @@ export function Dashboard({ username }: { username: string }) {
 
             <TabsContent value="cards" className="mt-4">
               <StockCards items={portfolioItems} onRemove={removeStock} />
+            </TabsContent>
+
+            <TabsContent value="ocr" className="mt-4">
+              <PortfolioOCR />
             </TabsContent>
           </Tabs>
         </div>
