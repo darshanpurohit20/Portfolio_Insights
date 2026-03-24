@@ -40,11 +40,6 @@ Install: pip install nsepython fastapi uvicorn pandas
 #     calculate_scenario_value, apply_rounding_to_stock_quote
 # )
 
-import sys
-import os
-
-# Fix for HuggingFace import path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -56,11 +51,27 @@ import time
 
 from nsepython import nse_quote, nsefetch
 from dotenv import load_dotenv
-from rounding import (
-    round_money, round_percent, round_price,
-    safe_divide, format_holding, calculate_portfolio_summary,
-    calculate_scenario_value, apply_rounding_to_stock_quote
-)
+import sys
+import os
+
+
+# Fix for HuggingFace import path
+
+
+sys.path.append(os.path.dirname(__file__))
+
+try:
+    from rounding import (
+        round_money, round_percent, round_price,
+        safe_divide, format_holding, calculate_portfolio_summary,
+        calculate_scenario_value, apply_rounding_to_stock_quote
+    )
+except:
+    from .rounding import (
+        round_money, round_percent, round_price,
+        safe_divide, format_holding, calculate_portfolio_summary,
+        calculate_scenario_value, apply_rounding_to_stock_quote
+    )
 
 load_dotenv()
 
