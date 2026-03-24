@@ -131,11 +131,10 @@ export function Dashboard({ username }: { username: string }) {
     checkAlerts()
   }, [checkAlerts])
 
-  function addStock(stock: PortfolioStock) {
-    const updated = [...portfolio, stock]
+  function addMultipleStocks(stocks: PortfolioStock[]) {
+    const updated = [...portfolio, ...stocks]
     setPortfolio(updated)
     savePortfolio(updated)
-    toast.success(`Added ${stock.name} to portfolio`)
   }
 
   function removeStock(id: string) {
@@ -262,7 +261,7 @@ export function Dashboard({ username }: { username: string }) {
             </TabsContent>
 
             <TabsContent value="ocr" className="mt-4">
-              <PortfolioOCR />
+              <PortfolioOCR onAddStocks={addMultipleStocks} />
             </TabsContent>
           </Tabs>
         </div>

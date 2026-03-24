@@ -1,14 +1,22 @@
 "use client"
 
 import { useState } from "react"
-import { Upload, FileSearch, ArrowRight, Loader2, Image as ImageIcon } from "lucide-react"
+import { Upload, FileSearch, ArrowRight, Loader2, Image as ImageIcon, CheckCircle2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { toast } from "sonner"
+import { PortfolioStock } from "@/lib/types"
+import { NSE_STOCKS } from "@/lib/nse-stocks"
 
-export function PortfolioOCR() {
+interface PortfolioOCRProps {
+  onAddStocks: (stocks: PortfolioStock[]) => void
+}
+
+export function PortfolioOCR({ onAddStocks }: PortfolioOCRProps) {
   const [isUploading, setIsUploading] = useState(false)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [base64Image, setBase64Image] = useState<string | null>(null)
+  const [extractedData, setExtractedData] = useState<any[] | null>(null)
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -19,33 +27,70 @@ export function PortfolioOCR() {
       return
     }
 
+    const reader = new FileReader()
+    reader.onloadend = () => {
+      setBase64Image(reader.result as string)
+    }
+    reader.readAsDataURL(file)
+
     const url = URL.createObjectURL(file)
     setPreviewUrl(url)
+    setExtractedData(null)
   }
 
   const handleExtract = async () => {
-    if (!previewUrl) return
+    if (!base64Image) return
     
     setIsUploading(true)
     try {
-      // Logic for Groq API extraction will be added to the API route
-      // This is a placeholder for the integration
       const response = await fetch("/api/portfolio/extract", {
         method: "POST",
-        body: JSON.stringify({ image: previewUrl }), // We'll need to handle base64 encoding later
+        body: JSON.stringify({ image: base64Image }),
         headers: { "Content-Type": "application/json" }
       })
 
       if (!response.ok) throw new Error("Extraction failed")
       
-      const data = await response.json()
-      toast.success("Portfolio extracted successfully!")
-      console.log(data)
+      const result = await response.json()
+      if (result.success && result.data) {
+        setExtractedData(result.data)
+        toast.success("Portfolio extracted successfully!")
+      } else {
+        throw new Error(result.error || "Failed to extract data")
+      }
     } catch (error) {
       toast.error("Failed to extract portfolio details. Please try again.")
     } finally {
       setIsUploading(false)
     }
+  }
+
+  const handleConfirm = () => {
+    if (!extractedData) return
+
+    const newStocks: PortfolioStock[] = extractedData.map((item: any) => {
+      // Try to find the matching NSE stock for yfinSymbol
+      const stockInfo = NSE_STOCKS.find(s => 
+        s.symbol.toUpperCase() === item.symbol.toUpperCase() || 
+        s.name.toUpperCase().includes(item.symbol.toUpperCase())
+      )
+
+      return {
+        id: Math.random().toString(36).substr(2, 9),
+        symbol: item.symbol,
+        name: stockInfo?.name || item.symbol,
+        qty: item.qty,
+        buyPrice: item.buyPrice,
+        yfinSymbol: stockInfo?.yfinSymbol || `${item.symbol}.NS`,
+        addedAt: new Date().toISOString()
+      }
+    })
+
+    onAddStocks(newStocks)
+    setExtractedData(null)
+    setPreviewUrl(null)
+    setBase64Image(null)
+    toast.success(`Successfully added ${newStocks.length} stocks to portfolio`)
   }
 
   return (
@@ -94,6 +139,35 @@ export function PortfolioOCR() {
                 <p className="text-lg font-semibold">No image selected</p>
                 <p className="text-sm text-muted-foreground">Please upload your portfolio screenshot first</p>
               </div>
+            </div>
+          ) : extractedData ? (
+            <div className="w-full space-y-4">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium text-muted-foreground">AI Extracted Potential Holdings:</p>
+                <div className="flex items-center gap-1 text-xs text-green-500 font-bold">
+                  <CheckCircle2 className="h-3 w-3" />
+                  Verified Symbols
+                </div>
+              </div>
+              <div className="grid gap-2">
+                {extractedData.map((item, idx) => (
+                  <div key={idx} className="flex items-center justify-between rounded-md border p-3 text-sm">
+                    <div className="flex flex-col">
+                      <span className="font-bold">{item.symbol}</span>
+                      <span className="text-xs text-muted-foreground">
+                        Qty: {item.qty} @ ₹{item.buyPrice}
+                      </span>
+                    </div>
+                    <div className="flex flex-col items-end">
+                      <span className="text-muted-foreground">Invested</span>
+                      <span className="font-medium">₹{(item.qty * item.buyPrice).toLocaleString("en-IN")}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <Button size="lg" className="w-full mt-4" onClick={handleConfirm}>
+                Confirm and Add to Portfolio
+              </Button>
             </div>
           ) : (
             <div className="flex flex-col items-center gap-6 text-center w-full max-w-sm">
