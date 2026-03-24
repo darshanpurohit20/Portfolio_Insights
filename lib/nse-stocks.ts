@@ -1,0 +1,98 @@
+export interface NseStock {
+  symbol: string
+  name: string
+  yfinSymbol: string
+}
+
+export const NSE_STOCKS: NseStock[] = [
+  { symbol: "RELIANCE", name: "Reliance Industries", yfinSymbol: "RELIANCE.NS" },
+  { symbol: "TCS", name: "Tata Consultancy Services", yfinSymbol: "TCS.NS" },
+  { symbol: "HDFCBANK", name: "HDFC Bank", yfinSymbol: "HDFCBANK.NS" },
+  { symbol: "INFY", name: "Infosys", yfinSymbol: "INFY.NS" },
+  { symbol: "ICICIBANK", name: "ICICI Bank", yfinSymbol: "ICICIBANK.NS" },
+  { symbol: "HINDUNILVR", name: "Hindustan Unilever", yfinSymbol: "HINDUNILVR.NS" },
+  { symbol: "ITC", name: "ITC Limited", yfinSymbol: "ITC.NS" },
+  { symbol: "SBIN", name: "State Bank of India", yfinSymbol: "SBIN.NS" },
+  { symbol: "BHARTIARTL", name: "Bharti Airtel", yfinSymbol: "BHARTIARTL.NS" },
+  { symbol: "KOTAKBANK", name: "Kotak Mahindra Bank", yfinSymbol: "KOTAKBANK.NS" },
+  { symbol: "LT", name: "Larsen & Toubro", yfinSymbol: "LT.NS" },
+  { symbol: "AXISBANK", name: "Axis Bank", yfinSymbol: "AXISBANK.NS" },
+  { symbol: "WIPRO", name: "Wipro", yfinSymbol: "WIPRO.NS" },
+  { symbol: "ASIANPAINT", name: "Asian Paints", yfinSymbol: "ASIANPAINT.NS" },
+  { symbol: "MARUTI", name: "Maruti Suzuki", yfinSymbol: "MARUTI.NS" },
+  { symbol: "HCLTECH", name: "HCL Technologies", yfinSymbol: "HCLTECH.NS" },
+  { symbol: "SUNPHARMA", name: "Sun Pharmaceutical", yfinSymbol: "SUNPHARMA.NS" },
+  { symbol: "TITAN", name: "Titan Company", yfinSymbol: "TITAN.NS" },
+  { symbol: "BAJFINANCE", name: "Bajaj Finance", yfinSymbol: "BAJFINANCE.NS" },
+  { symbol: "TATAMOTORS", name: "Tata Motors", yfinSymbol: "TATAMOTORS.NS" },
+  { symbol: "NTPC", name: "NTPC Limited", yfinSymbol: "NTPC.NS" },
+  { symbol: "POWERGRID", name: "Power Grid Corporation", yfinSymbol: "POWERGRID.NS" },
+  { symbol: "ONGC", name: "Oil and Natural Gas Corp", yfinSymbol: "ONGC.NS" },
+  { symbol: "TATASTEEL", name: "Tata Steel", yfinSymbol: "TATASTEEL.NS" },
+  { symbol: "ADANIENT", name: "Adani Enterprises", yfinSymbol: "ADANIENT.NS" },
+  { symbol: "ADANIGREEN", name: "Adani Green Energy", yfinSymbol: "ADANIGREEN.NS" },
+  { symbol: "ADANIPORTS", name: "Adani Ports and SEZ", yfinSymbol: "ADANIPORTS.NS" },
+  { symbol: "COALINDIA", name: "Coal India", yfinSymbol: "COALINDIA.NS" },
+  { symbol: "BPCL", name: "Bharat Petroleum", yfinSymbol: "BPCL.NS" },
+  { symbol: "JSWSTEEL", name: "JSW Steel", yfinSymbol: "JSWSTEEL.NS" },
+  { symbol: "ULTRACEMCO", name: "UltraTech Cement", yfinSymbol: "ULTRACEMCO.NS" },
+  { symbol: "TECHM", name: "Tech Mahindra", yfinSymbol: "TECHM.NS" },
+  { symbol: "M&M", name: "Mahindra & Mahindra", yfinSymbol: "M&M.NS" },
+  { symbol: "DRREDDY", name: "Dr. Reddy's Laboratories", yfinSymbol: "DRREDDY.NS" },
+  { symbol: "CIPLA", name: "Cipla", yfinSymbol: "CIPLA.NS" },
+  { symbol: "DIVISLAB", name: "Divi's Laboratories", yfinSymbol: "DIVISLAB.NS" },
+  { symbol: "GRASIM", name: "Grasim Industries", yfinSymbol: "GRASIM.NS" },
+  { symbol: "BAJAJFINSV", name: "Bajaj Finserv", yfinSymbol: "BAJAJFINSV.NS" },
+  { symbol: "EICHERMOT", name: "Eicher Motors", yfinSymbol: "EICHERMOT.NS" },
+  { symbol: "NESTLEIND", name: "Nestle India", yfinSymbol: "NESTLEIND.NS" },
+  { symbol: "HEROMOTOCO", name: "Hero MotoCorp", yfinSymbol: "HEROMOTOCO.NS" },
+  { symbol: "SBILIFE", name: "SBI Life Insurance", yfinSymbol: "SBILIFE.NS" },
+  { symbol: "HDFCLIFE", name: "HDFC Life Insurance", yfinSymbol: "HDFCLIFE.NS" },
+  { symbol: "BRITANNIA", name: "Britannia Industries", yfinSymbol: "BRITANNIA.NS" },
+  { symbol: "APOLLOHOSP", name: "Apollo Hospitals", yfinSymbol: "APOLLOHOSP.NS" },
+  { symbol: "INDUSINDBK", name: "IndusInd Bank", yfinSymbol: "INDUSINDBK.NS" },
+  { symbol: "TATACONSUM", name: "Tata Consumer Products", yfinSymbol: "TATACONSUM.NS" },
+  { symbol: "BANKBARODA", name: "Bank of Baroda", yfinSymbol: "BANKBARODA.NS" },
+  { symbol: "VEDL", name: "Vedanta Limited", yfinSymbol: "VEDL.NS" },
+  { symbol: "HINDALCO", name: "Hindalco Industries", yfinSymbol: "HINDALCO.NS" },
+  { symbol: "BANDHANBNK", name: "Bandhan Bank", yfinSymbol: "BANDHANBNK.NS" },
+  { symbol: "MAZDOCK", name: "Mazagon Dock Shipbuilders", yfinSymbol: "MAZDOCK.NS" },
+  { symbol: "EXCELSOFT", name: "Excelsoft Technologies", yfinSymbol: "EXCELSOFT.NS" },
+  { symbol: "ZOMATO", name: "Zomato", yfinSymbol: "ZOMATO.NS" },
+  { symbol: "PAYTM", name: "One 97 Communications", yfinSymbol: "PAYTM.NS" },
+  { symbol: "NYKAA", name: "FSN E-Commerce (Nykaa)", yfinSymbol: "NYKAA.NS" },
+  { symbol: "IRCTC", name: "Indian Railway Catering", yfinSymbol: "IRCTC.NS" },
+  { symbol: "HAL", name: "Hindustan Aeronautics", yfinSymbol: "HAL.NS" },
+  { symbol: "BEL", name: "Bharat Electronics", yfinSymbol: "BEL.NS" },
+  { symbol: "BHEL", name: "Bharat Heavy Electricals", yfinSymbol: "BHEL.NS" },
+  { symbol: "TATAPOWER", name: "Tata Power Company", yfinSymbol: "TATAPOWER.NS" },
+  { symbol: "IRFC", name: "Indian Railway Finance Corp", yfinSymbol: "IRFC.NS" },
+  { symbol: "PNB", name: "Punjab National Bank", yfinSymbol: "PNB.NS" },
+  { symbol: "IOC", name: "Indian Oil Corporation", yfinSymbol: "IOC.NS" },
+  { symbol: "YESBANK", name: "Yes Bank", yfinSymbol: "YESBANK.NS" },
+  { symbol: "IDEA", name: "Vodafone Idea", yfinSymbol: "IDEA.NS" },
+  { symbol: "SUZLON", name: "Suzlon Energy", yfinSymbol: "SUZLON.NS" },
+  { symbol: "NHPC", name: "NHPC Limited", yfinSymbol: "NHPC.NS" },
+  { symbol: "DLF", name: "DLF Limited", yfinSymbol: "DLF.NS" },
+  { symbol: "GODREJCP", name: "Godrej Consumer Products", yfinSymbol: "GODREJCP.NS" },
+  { symbol: "BANKBETA", name: "UTI Bank ETF", yfinSymbol: "BANKBETA.NS" },
+  { symbol: "GROWWNIFTY", name: "Nifty 50 ETF", yfinSymbol: "GROWWNIFTY.NS" },
+  { symbol: "DABUR", name: "Dabur India", yfinSymbol: "DABUR.NS" },
+  { symbol: "PIDILITIND", name: "Pidilite Industries", yfinSymbol: "PIDILITIND.NS" },
+  { symbol: "SIEMENS", name: "Siemens India", yfinSymbol: "SIEMENS.NS" },
+  { symbol: "HAVELLS", name: "Havells India", yfinSymbol: "HAVELLS.NS" },
+  { symbol: "ABB", name: "ABB India", yfinSymbol: "ABB.NS" },
+  { symbol: "JINDALSTEL", name: "Jindal Steel & Power", yfinSymbol: "JINDALSTEL.NS" },
+  { symbol: "TRENT", name: "Trent Limited", yfinSymbol: "TRENT.NS" },
+  { symbol: "ATGL", name: "Adani Total Gas", yfinSymbol: "ATGL.NS" },
+]
+
+export function searchStocks(query: string): NseStock[] {
+  if (!query || query.length < 1) return []
+  const q = query.toUpperCase()
+  return NSE_STOCKS.filter(
+    (s) =>
+      s.symbol.toUpperCase().includes(q) ||
+      s.name.toUpperCase().includes(q)
+  ).slice(0, 10)
+}
