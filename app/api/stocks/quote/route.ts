@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server"
-const yahooFinance = require("yahoo-finance2").default
 
 export async function GET(req: NextRequest) {
   const symbols = req.nextUrl.searchParams.get("symbols")
   if (!symbols) {
     return NextResponse.json({ error: "No symbols provided" }, { status: 400 })
   }
+
+  // Use dynamic import to prevent Turbopack from crawling the module at build time
+  const { default: yahooFinance } = await import("yahoo-finance2")
 
   const symbolList = symbols.split(",").map((s) => s.trim())
   const results: Record<string, unknown> = {}
