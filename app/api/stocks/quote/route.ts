@@ -29,15 +29,23 @@ export async function GET(req: NextRequest) {
     await Promise.all(
       symbolList.map(async (symbol) => {
         try {
-          const [quote, history] = await Promise.all([
-            yf.quote(symbol),
-            yf.chart(symbol, {
-              period1: new Date(
-                Date.now() - 365 * 24 * 60 * 60 * 1000
-              ).toISOString().split("T")[0],
-              interval: "1d",
-            }),
-          ])
+          // Add timeout to prevent long-hanging requests
+          const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error(`Request timeout for ${symbol}`)), 10000)
+          )
+
+          const quotePromise = yf.quote(symbol)
+          const chartPromise = yf.chart(symbol, {
+            period1: new Date(
+              Date.now() - 365 * 24 * 60 * 60 * 1000
+            ).toISOString().split("T")[0],
+            interval: "1d",
+          })
+
+          const [quote, history] = await Promise.race([
+            Promise.all([quotePromise, chartPromise]),
+            timeoutPromise
+          ]) as any
 
         const historyData = (history?.quotes || [])
           .filter((q: { close?: number | null }) => q.close != null)

@@ -6,13 +6,9 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-  serverComponentsExternalPackages: ['yahoo-finance2'],
-  webpack: (config, { isServer }) => {
-    if (isServer) {
-      config.externals = [...(config.externals || []), 'yahoo-finance2']
-    }
-    return config
-  },
+  // Turbopack configuration for Next.js 16
+  turbopack: {},
 }
 
 export default nextConfig
+
