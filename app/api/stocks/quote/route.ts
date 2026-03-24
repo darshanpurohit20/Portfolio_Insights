@@ -1,29 +1,43 @@
 import { NextRequest, NextResponse } from "next/server"
 
-export async function GET(req: NextRequest) {
-  const symbols = req.nextUrl.searchParams.get("symbols")
-  if (!symbols) {
-    return NextResponse.json({ error: "No symbols provided" }, { status: 400 })
+let yahooFinance: any = null
+
+async function initYahooFinance() {
+  if (yahooFinance) return yahooFinance
+  try {
+    const module = await import("yahoo-finance2")
+    yahooFinance = module.default || module
+    return yahooFinance
+  } catch (error) {
+    console.error("Failed to load yahoo-finance2:", error)
+    throw error
   }
+}
 
-  // Use dynamic import to prevent Turbopack from crawling the module at build time
-  const { default: yahooFinance } = await import("yahoo-finance2")
+export async function GET(req: NextRequest) {
+  try {
+    const symbols = req.nextUrl.searchParams.get("symbols")
+    if (!symbols) {
+      return NextResponse.json({ error: "No symbols provided" }, { status: 400 })
+    }
 
-  const symbolList = symbols.split(",").map((s) => s.trim())
-  const results: Record<string, unknown> = {}
+    const yf = await initYahooFinance()
 
-  await Promise.all(
-    symbolList.map(async (symbol) => {
-      try {
-        const [quote, history] = await Promise.all([
-          yahooFinance.quote(symbol),
-          yahooFinance.chart(symbol, {
-            period1: new Date(
-              Date.now() - 365 * 24 * 60 * 60 * 1000
-            ).toISOString().split("T")[0],
-            interval: "1d",
-          }),
-        ])
+    const symbolList = symbols.split(",").map((s) => s.trim())
+    const results: Record<string, unknown> = {}
+
+    await Promise.all(
+      symbolList.map(async (symbol) => {
+        try {
+          const [quote, history] = await Promise.all([
+            yf.quote(symbol),
+            yf.chart(symbol, {
+              period1: new Date(
+                Date.now() - 365 * 24 * 60 * 60 * 1000
+              ).toISOString().split("T")[0],
+              interval: "1d",
+            }),
+          ])
 
         const historyData = (history?.quotes || [])
           .filter((q: { close?: number | null }) => q.close != null)
@@ -63,5 +77,12 @@ export async function GET(req: NextRequest) {
     })
   )
 
-  return NextResponse.json(results)
+    return NextResponse.json(results)
+  } catch (error: any) {
+    console.error("API Error:", error)
+    return NextResponse.json(
+      { error: "Failed to fetch stock data", message: error?.message },
+      { status: 500 }
+    )
+  }
 }
