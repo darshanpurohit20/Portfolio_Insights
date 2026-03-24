@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import yahooFinance from "yahoo-finance2"
+const yahooFinance = require("yahoo-finance2").default
 
 export async function GET(req: NextRequest) {
   const symbols = req.nextUrl.searchParams.get("symbols")
