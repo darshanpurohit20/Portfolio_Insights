@@ -137,6 +137,13 @@ export function Dashboard({ username }: { username: string }) {
     savePortfolio(updated)
   }
 
+  function addStock(stock: PortfolioStock) {
+    const updated = [...portfolio, stock]
+    setPortfolio(updated)
+    savePortfolio(updated)
+    toast.success(`Added ${stock.name} to portfolio`)
+  }
+
   function removeStock(id: string) {
     const stock = portfolio.find((s) => s.id === id)
     const updated = portfolio.filter((s) => s.id !== id)
