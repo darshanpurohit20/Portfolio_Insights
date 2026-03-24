@@ -375,6 +375,13 @@ import time
 # nsepython wraps NSE's official API with proper headers/cookies
 from nsepython import nse_quote, nsefetch
 
+# Import rounding utilities for financial accuracy
+from rounding import (
+    round_money, round_percent, round_price,
+    safe_divide, format_holding, calculate_portfolio_summary,
+    calculate_scenario_value, apply_rounding_to_stock_quote
+)
+
 # ─────────────────────────────────────────
 # App setup
 # ─────────────────────────────────────────
@@ -485,6 +492,12 @@ def _nse_symbol(symbol: str) -> str:
 #         "changePct": round(change_pct, 4),
 #     }
 def _fetch_quote(nse_sym: str) -> Dict:
+    """
+    Fetch stock quote from NSE.
+    
+    All values are kept in full precision during calculation,
+    then rounded at output stage.
+    """
     url = f"https://www.nseindia.com/api/quote-equity?symbol={nse_sym}"
 
     data = nsefetch(url)
@@ -497,6 +510,7 @@ def _fetch_quote(nse_sym: str) -> Dict:
     intra = price_info.get("intraDayHighLow", {})
     week  = price_info.get("weekHighLow", {})
 
+    # Step 1: Extract with full precision (no rounding yet)
     current = float(price_info.get("lastPrice", 0))
     open_price = float(price_info.get("open", 0))
     prev_close = float(price_info.get("previousClose", 0))
@@ -507,19 +521,21 @@ def _fetch_quote(nse_sym: str) -> Dict:
     high_52w = float(week.get("max", 0))
     low_52w  = float(week.get("min", 0))
 
+    # Step 2: Calculate change with full precision
     change = current - prev_close
-    change_pct = (change / prev_close * 100) if prev_close else 0
+    change_pct = safe_divide(change, prev_close) * 100.0
 
+    # Step 3: Round only at output stage
     return {
-        "current":   current,
-        "open":      open_price,
-        "prevClose": prev_close,
-        "dayHigh":   day_high,
-        "dayLow":    day_low,
-        "high52w":   high_52w,
-        "low52w":    low_52w,
-        "change":    round(change, 4),
-        "changePct": round(change_pct, 4),
+        "current":   round_price(current),
+        "open":      round_price(open_price),
+        "prevClose": round_price(prev_close),
+        "dayHigh":   round_price(day_high),
+        "dayLow":    round_price(day_low),
+        "high52w":   round_price(high_52w),
+        "low52w":    round_price(low_52w),
+        "change":    round_percent(change),
+        "changePct": round_percent(change_pct),
     }
 # ─────────────────────────────────────────
 # NSE: fetch 1-year history for sparkline
@@ -689,6 +705,12 @@ async def get_portfolio(data: Dict):
     """
     Full portfolio with P&L calculations.
     Body: {"portfolio": [{"symbol": "HDFCBANK.NS", "qty": 75, "buyPrice": 746.41}, ...]}
+    
+    ROUNDING STRATEGY:
+    1. Calculate all values in full floating-point precision
+    2. Accumulate totals from unrounded values
+    3. Round ONLY when building the response
+    4. This ensures: sum(rounded items) ≈ rounded(total)
     """
     portfolio = data.get("portfolio", [])
     if not portfolio:
@@ -703,45 +725,180 @@ async def get_portfolio(data: Dict):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+    # Step 1: Process each holding with FULL PRECISION
+    # (Do NOT round at this stage — maintain precision for totals)
     results        = []
-    total_invested = 0.0
-    total_value    = 0.0
+    total_invested = 0.0  # Accumulate unrounded values
+    total_value    = 0.0  # Accumulate unrounded values
 
     for symbol, holding in symbol_map.items():
         qty       = float(holding.get("qty", 0))
         buy_price = float(holding.get("buyPrice", 0))
         sd        = stock_data.get(symbol, _error_result(symbol, "Not fetched"))
 
-        current_price = sd.get("currentPrice", 0)
-        invested      = qty * buy_price
+        current_price = float(sd.get("currentPrice", 0))
+        
+        # Calculate with full precision
+        invested = qty * buy_price
         current_value = qty * current_price
-        pnl           = current_value - invested
-        pnl_pct       = (pnl / invested * 100) if invested else 0
+        pnl = current_value - invested
+        pnl_percent = safe_divide(pnl, invested) * 100.0
 
+        # Accumulate for totals (keep precision)
         total_invested += invested
         total_value    += current_value
 
-        results.append({
+        # Step 2: Format holding with rounded values for output
+        formatted_holding = {
             **sd,
             "qty":          qty,
-            "buyPrice":     buy_price,
-            "invested":     round(invested, 2),
-            "currentValue": round(current_value, 2),
-            "pnl":          round(pnl, 2),
-            "pnlPercent":   round(pnl_pct, 4),
+            "buyPrice":     round_price(buy_price),
+            "currentPrice": round_price(current_price),
+            "invested":     round_money(invested),
+            "currentValue": round_money(current_value),
+            "pnl":          round_money(pnl),
+            "pnlPercent":   round_percent(pnl_percent),
+        }
+        results.append(formatted_holding)
+
+    # Step 3: Calculate portfolio totals from UNROUNDED values
+    total_pnl     = total_value - total_invested
+    total_pnl_pct = safe_divide(total_pnl, total_invested) * 100.0
+
+    # Step 4: Round summary AFTER calculating from full-precision totals
+    summary = {
+        "totalInvested":   round_money(total_invested),
+        "totalValue":      round_money(total_value),
+        "totalPnl":        round_money(total_pnl),
+        "totalPnlPercent": round_percent(total_pnl_pct),
+    }
+
+
+
+@app.post("/api/stocks/scenarios")
+async def get_portfolio_scenarios(data: Dict):
+    """
+    Calculate portfolio value under different price scenarios.
+    Useful for "What if?" analysis:
+      - What if price touches day high/low?
+      - What if price touches 52-week high/low?
+    
+    Body: {
+        "portfolio": [
+            {"symbol": "HDFCBANK.NS", "qty": 75, "buyPrice": 746.41},
+            ...
+        ]
+    }
+    
+    Response includes current + scenario values for each holding.
+    """
+    portfolio = data.get("portfolio", [])
+    if not portfolio:
+        raise HTTPException(status_code=400, detail="No portfolio data provided")
+
+    symbol_map = {h["symbol"].strip().upper(): h for h in portfolio}
+    symbols    = list(symbol_map.keys())
+    logger.info(f"\n📊 Scenario request: {len(symbols)} holdings")
+
+    try:
+        stock_data = get_stock_data_bulk(symbols)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    results = []
+    totals_at_current = {"value": 0.0, "pnl": 0.0}
+    totals_at_day_high = {"value": 0.0, "pnl": 0.0}
+    totals_at_day_low = {"value": 0.0, "pnl": 0.0}
+    totals_at_52w_high = {"value": 0.0, "pnl": 0.0}
+    totals_at_52w_low = {"value": 0.0, "pnl": 0.0}
+
+    for symbol, holding in symbol_map.items():
+        qty = float(holding.get("qty", 0))
+        buy_price = float(holding.get("buyPrice", 0))
+        sd = stock_data.get(symbol, _error_result(symbol, "Not fetched"))
+
+        current_price = float(sd.get("currentPrice", 0))
+        day_high = float(sd.get("dayHigh", 0))
+        day_low = float(sd.get("dayLow", 0))
+        high_52w = float(sd.get("high52w", 0))
+        low_52w = float(sd.get("low52w", 0))
+
+        invested = qty * buy_price
+
+        # Calculate at current price
+        at_current = calculate_scenario_value(qty, current_price, invested_per_unit=buy_price)
+        
+        # Calculate at day high/low
+        at_day_high = calculate_scenario_value(qty, day_high, invested_per_unit=buy_price)
+        at_day_low = calculate_scenario_value(qty, day_low, invested_per_unit=buy_price)
+        
+        # Calculate at 52-week high/low
+        at_52w_high = calculate_scenario_value(qty, high_52w, invested_per_unit=buy_price)
+        at_52w_low = calculate_scenario_value(qty, low_52w, invested_per_unit=buy_price)
+
+        # Accumulate for totals
+        totals_at_current["value"] += qty * current_price
+        totals_at_current["pnl"] += at_current["pnl"]
+        
+        totals_at_day_high["value"] += qty * day_high
+        totals_at_day_high["pnl"] += at_day_high["pnl"]
+        
+        totals_at_day_low["value"] += qty * day_low
+        totals_at_day_low["pnl"] += at_day_low["pnl"]
+        
+        totals_at_52w_high["value"] += qty * high_52w
+        totals_at_52w_high["pnl"] += at_52w_high["pnl"]
+        
+        totals_at_52w_low["value"] += qty * low_52w
+        totals_at_52w_low["pnl"] += at_52w_low["pnl"]
+
+        results.append({
+            "symbol": symbol,
+            "qty": qty,
+            "buyPrice": round_price(buy_price),
+            "invested": round_money(invested),
+            "scenarios": {
+                "current": at_current,
+                "dayHigh": {**at_day_high, "price": round_price(day_high)},
+                "dayLow": {**at_day_low, "price": round_price(day_low)},
+                "high52w": {**at_52w_high, "price": round_price(high_52w)},
+                "low52w": {**at_52w_low, "price": round_price(low_52w)},
+            }
         })
 
-    total_pnl     = total_value - total_invested
-    total_pnl_pct = (total_pnl / total_invested * 100) if total_invested else 0
+    # Calculate total invested
+    total_invested = sum(float(h.get("qty", 0)) * float(h.get("buyPrice", 0)) for h in portfolio)
 
     return {
         "holdings": results,
-        "summary": {
-            "totalInvested":   round(total_invested, 2),
-            "totalValue":      round(total_value, 2),
-            "totalPnl":        round(total_pnl, 2),
-            "totalPnlPercent": round(total_pnl_pct, 4),
-        },
+        "scenarioSummary": {
+            "totalInvested": round_money(total_invested),
+            "atCurrent": {
+                "value": round_money(totals_at_current["value"]),
+                "pnl": round_money(totals_at_current["pnl"]),
+                "pnlPercent": round_percent(safe_divide(totals_at_current["pnl"], total_invested) * 100.0),
+            },
+            "atDayHigh": {
+                "value": round_money(totals_at_day_high["value"]),
+                "pnl": round_money(totals_at_day_high["pnl"]),
+                "pnlPercent": round_percent(safe_divide(totals_at_day_high["pnl"], total_invested) * 100.0),
+            },
+            "atDayLow": {
+                "value": round_money(totals_at_day_low["value"]),
+                "pnl": round_money(totals_at_day_low["pnl"]),
+                "pnlPercent": round_percent(safe_divide(totals_at_day_low["pnl"], total_invested) * 100.0),
+            },
+            "at52wHigh": {
+                "value": round_money(totals_at_52w_high["value"]),
+                "pnl": round_money(totals_at_52w_high["pnl"]),
+                "pnlPercent": round_percent(safe_divide(totals_at_52w_high["pnl"], total_invested) * 100.0),
+            },
+            "at52wLow": {
+                "value": round_money(totals_at_52w_low["value"]),
+                "pnl": round_money(totals_at_52w_low["pnl"]),
+                "pnlPercent": round_percent(safe_divide(totals_at_52w_low["pnl"], total_invested) * 100.0),
+            },
+        }
     }
 
 
