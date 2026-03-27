@@ -85,6 +85,7 @@ export const NSE_STOCKS: NseStock[] = [
   { symbol: "JINDALSTEL", name: "Jindal Steel & Power", yfinSymbol: "JINDALSTEL.NS" },
   { symbol: "TRENT", name: "Trent Limited", yfinSymbol: "TRENT.NS" },
   { symbol: "DEEPAKNTR",name: "Deepak Nitrite Ltd.",yfinSymbol: "DEEPAKNTR.NS" },
+  { symbol: "DEEPAKFERT", name: "Deepak Fertilisers And Petrochemicals Corporation", yfinSymbol: "DEEPAKFERT.NS" },
   { symbol: "ATGL", name: "Adani Total Gas", yfinSymbol: "ATGL.NS" },
 ]
 
