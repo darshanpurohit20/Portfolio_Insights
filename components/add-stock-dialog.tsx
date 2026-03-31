@@ -19,10 +19,11 @@ import type { PortfolioStock } from "@/lib/types"
 interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onAdd: (stock: PortfolioStock) => void
+  onSubmit: (stock: PortfolioStock) => void
+  initialData?: PortfolioStock | null
 }
 
-export function AddStockDialog({ open, onOpenChange, onAdd }: Props) {
+export function AddStockDialog({ open, onOpenChange, onSubmit, initialData }: Props) {
   const [query, setQuery] = useState("")
   const [results, setResults] = useState<NseStock[]>([])
   const [selected, setSelected] = useState<NseStock | null>(null)
@@ -30,8 +31,25 @@ export function AddStockDialog({ open, onOpenChange, onAdd }: Props) {
   const [buyPrice, setBuyPrice] = useState("")
   const [searching, setSearching] = useState(false)
 
+  const isEdit = !!initialData
+
+  useEffect(() => {
+    if (initialData) {
+      setQty(initialData.qty.toString())
+      setBuyPrice(initialData.buyPrice.toString())
+      setQuery(initialData.name)
+      setSelected({
+        symbol: initialData.symbol,
+        yfinSymbol: initialData.yfinSymbol,
+        name: initialData.name,
+      } as NseStock)
+    } else {
+      reset()
+    }
+  }, [initialData])
+
   const searchStocks = useCallback(async (q: string) => {
-    if (q.length < 1) {
+    if (isEdit || q.length < 1) {
       setResults([])
       return
     }
@@ -45,12 +63,13 @@ export function AddStockDialog({ open, onOpenChange, onAdd }: Props) {
     } finally {
       setSearching(false)
     }
-  }, [])
+  }, [isEdit])
 
   useEffect(() => {
+    if (isEdit) return
     const timer = setTimeout(() => searchStocks(query), 300)
     return () => clearTimeout(timer)
-  }, [query, searchStocks])
+  }, [query, searchStocks, isEdit])
 
   function handleSelect(stock: NseStock) {
     setSelected(stock)
@@ -62,8 +81,8 @@ export function AddStockDialog({ open, onOpenChange, onAdd }: Props) {
     e.preventDefault()
     if (!selected || !qty || !buyPrice) return
 
-    onAdd({
-      id: `${selected.yfinSymbol}-${Date.now()}`,
+    onSubmit({
+      id: isEdit ? initialData!.id : `${selected.yfinSymbol}-${Date.now()}`,
       symbol: selected.symbol,
       yfinSymbol: selected.yfinSymbol,
       name: selected.name,
@@ -71,10 +90,7 @@ export function AddStockDialog({ open, onOpenChange, onAdd }: Props) {
       buyPrice: parseFloat(buyPrice),
     })
 
-    setQuery("")
-    setSelected(null)
-    setQty("")
-    setBuyPrice("")
+    if (!isEdit) reset()
     onOpenChange(false)
   }
 
@@ -90,21 +106,25 @@ export function AddStockDialog({ open, onOpenChange, onAdd }: Props) {
     <Dialog
       open={open}
       onOpenChange={(v) => {
-        if (!v) reset()
+        if (!v && !isEdit) reset()
         onOpenChange(v)
       }}
     >
       <DialogContent className="bg-card border-border">
         <DialogHeader>
-          <DialogTitle className="text-foreground">Add Stock</DialogTitle>
+          <DialogTitle className="text-foreground">
+            {isEdit ? "Edit Stock" : "Add Stock"}
+          </DialogTitle>
           <DialogDescription>
-            Search by stock name or NSE symbol. Auto-maps to Yahoo Finance format.
+            {isEdit
+              ? `Update holdings for ${selected?.name}`
+              : "Search by stock name or NSE symbol. Auto-maps to Yahoo Finance format."}
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
-            <Label className="text-foreground">Search Stock</Label>
+            <Label className="text-foreground">Stock</Label>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -113,12 +133,13 @@ export function AddStockDialog({ open, onOpenChange, onAdd }: Props) {
                   setQuery(e.target.value)
                   setSelected(null)
                 }}
+                disabled={isEdit}
                 placeholder="e.g., TCS, Reliance, HDFC..."
-                className="pl-10 bg-secondary text-foreground border-border"
+                className="pl-10 bg-secondary text-foreground border-border disabled:opacity-80"
               />
             </div>
 
-            {results.length > 0 && !selected && (
+            {results.length > 0 && !selected && !isEdit && (
               <div className="max-h-48 overflow-y-auto rounded-lg border border-border bg-secondary">
                 {results.map((stock) => (
                   <button
@@ -137,7 +158,7 @@ export function AddStockDialog({ open, onOpenChange, onAdd }: Props) {
               </div>
             )}
 
-            {searching && (
+            {searching && !isEdit && (
               <p className="text-xs text-muted-foreground">Searching...</p>
             )}
 
@@ -145,18 +166,20 @@ export function AddStockDialog({ open, onOpenChange, onAdd }: Props) {
               <div className="flex items-center gap-2 rounded-md bg-primary/10 px-3 py-2">
                 <span className="text-sm font-medium text-primary">{selected.name}</span>
                 <span className="text-xs text-muted-foreground">({selected.yfinSymbol})</span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="ml-auto h-5 w-5 text-muted-foreground"
-                  onClick={() => {
-                    setSelected(null)
-                    setQuery("")
-                  }}
-                >
-                  x
-                </Button>
+                {!isEdit && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="ml-auto h-5 w-5 text-muted-foreground"
+                    onClick={() => {
+                      setSelected(null)
+                      setQuery("")
+                    }}
+                  >
+                    x
+                  </Button>
+                )}
               </div>
             )}
           </div>
@@ -195,8 +218,12 @@ export function AddStockDialog({ open, onOpenChange, onAdd }: Props) {
               disabled={!selected || !qty || !buyPrice}
               className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
-              <Plus className="h-4 w-4 mr-1" />
-              Add to Portfolio
+              {isEdit ? "Update Holding" : (
+                <>
+                  <Plus className="h-4 w-4 mr-1" />
+                  Add to Portfolio
+                </>
+              )}
             </Button>
           </DialogFooter>
         </form>

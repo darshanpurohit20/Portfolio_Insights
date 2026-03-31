@@ -1,7 +1,7 @@
 import asyncio
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, List, Any, Optional, Tuple, cast
 from datetime import datetime, timedelta
 import pandas as pd
 import logging
@@ -55,7 +55,7 @@ app.add_middleware(
 # ─────────────────────────────────────────
 # Cache & Configuration
 # ─────────────────────────────────────────
-price_cache: Dict[str, Dict[str, Any]] = {}
+price_cache: Dict[str, Any] = {}
 index_cache: Dict[str, Any] = {"data": {}, "updated_at": None}
 
 CACHE_TTL = 60          # Fresh data
@@ -86,7 +86,7 @@ def _nse_symbol(symbol: str) -> str:
 # ─────────────────────────────────────────
 # BULK INDEX FETCHER (NEXT LEVEL SPEED)
 # ─────────────────────────────────────────
-def _refresh_index_cache():
+def _refresh_index_cache(*args):
     """Fetches Nifty 500 data in ONE request"""
     try:
         url = "https://www.nseindia.com/api/equity-stockIndices?index=NIFTY%20500"

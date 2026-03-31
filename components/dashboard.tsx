@@ -53,6 +53,8 @@ export function Dashboard({ username }: { username: string }) {
   const [portfolio, setPortfolio] = useState<PortfolioStock[]>([])
   const [alerts, setAlerts] = useState<PriceAlert[]>([])
   const [addOpen, setAddOpen] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
+  const [editingStock, setEditingStock] = useState<PortfolioStock | null>(null)
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
@@ -142,6 +144,21 @@ export function Dashboard({ username }: { username: string }) {
     setPortfolio(updated)
     savePortfolio(updated)
     toast.success(`Added ${stock.name} to portfolio`)
+  }
+
+  function updateStock(updatedStock: PortfolioStock) {
+    const updated = portfolio.map((s) => (s.id === updatedStock.id ? updatedStock : s))
+    setPortfolio(updated)
+    savePortfolio(updated)
+    toast.success(`Updated ${updatedStock.name}`)
+  }
+
+  function handleEdit(id: string) {
+    const stock = portfolio.find((s) => s.id === id)
+    if (stock) {
+      setEditingStock(stock)
+      setEditOpen(true)
+    }
   }
 
   function removeStock(id: string) {
@@ -259,12 +276,13 @@ export function Dashboard({ username }: { username: string }) {
               <PortfolioTable
                 items={portfolioItems}
                 onRemove={removeStock}
+                onEdit={handleEdit}
                 loading={isLoading && !quotes}
               />
             </TabsContent>
 
             <TabsContent value="cards" className="mt-4">
-              <StockCards items={portfolioItems} onRemove={removeStock} />
+              <StockCards items={portfolioItems} onRemove={removeStock} onEdit={handleEdit} />
             </TabsContent>
 
             <TabsContent value="ocr" className="mt-4">
@@ -274,7 +292,17 @@ export function Dashboard({ username }: { username: string }) {
         </div>
       </main>
 
-      <AddStockDialog open={addOpen} onOpenChange={setAddOpen} onAdd={addStock} />
+      <AddStockDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        onSubmit={addStock}
+      />
+      <AddStockDialog
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        onSubmit={updateStock}
+        initialData={editingStock}
+      />
     </div>
   )
 }

@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Sparkline } from "@/components/sparkline"
-import { Trash2 } from "lucide-react"
+import { Trash2, Pencil } from "lucide-react"
 import type { PortfolioItem } from "@/lib/types"
 
 function formatINR(value: number): string {
@@ -15,9 +15,10 @@ function formatINR(value: number): string {
 interface Props {
   items: PortfolioItem[]
   onRemove: (id: string) => void
+  onEdit: (id: string) => void
 }
 
-export function StockCards({ items, onRemove }: Props) {
+export function StockCards({ items, onRemove, onEdit }: Props) {
   if (items.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center rounded-lg border border-border bg-card p-12">
@@ -59,6 +60,14 @@ export function StockCards({ items, onRemove }: Props) {
                   >
                     {item.pnlPercent >= 0 ? "+" : ""}{item.pnlPercent.toFixed(2)}%
                   </Badge>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-muted-foreground hover:text-primary"
+                    onClick={() => onEdit(item.id)}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
                   <Button
                     variant="ghost"
                     size="icon"

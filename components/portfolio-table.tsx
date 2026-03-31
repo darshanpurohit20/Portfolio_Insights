@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Sparkline } from "@/components/sparkline"
-import { ArrowUpDown, Trash2 } from "lucide-react"
+import { ArrowUpDown, Trash2, Pencil } from "lucide-react"
 import type { PortfolioItem } from "@/lib/types"
 
 function formatINR(value: number): string {
@@ -18,10 +18,11 @@ type SortKey = "name" | "currentPrice" | "pnl" | "pnlPercent" | "currentValue" |
 interface Props {
   items: PortfolioItem[]
   onRemove: (id: string) => void
+  onEdit: (id: string) => void
   loading: boolean
 }
 
-export function PortfolioTable({ items, onRemove, loading }: Props) {
+export function PortfolioTable({ items, onRemove, onEdit, loading }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>("pnl")
   const [sortAsc, setSortAsc] = useState(false)
 
@@ -186,15 +187,26 @@ export function PortfolioTable({ items, onRemove, loading }: Props) {
                   </div>
                 </TableCell>
                 <TableCell>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 text-muted-foreground hover:text-loss"
-                    onClick={() => onRemove(item.id)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    <span className="sr-only">Remove {item.name}</span>
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-muted-foreground hover:text-primary"
+                      onClick={() => onEdit(item.id)}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                      <span className="sr-only">Edit {item.name}</span>
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-muted-foreground hover:text-loss"
+                      onClick={() => onRemove(item.id)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      <span className="sr-only">Remove {item.name}</span>
+                    </Button>
+                  </div>
                 </TableCell>
               </TableRow>
             )
