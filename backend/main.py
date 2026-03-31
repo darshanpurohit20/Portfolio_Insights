@@ -160,7 +160,14 @@ def _get_single_stock_data(symbol: str) -> Optional[Dict]:
             try:
                 meta_url = f"https://www.nseindia.com/api/equity-meta-info?symbol={nse_sym}"
                 meta = nsefetch(meta_url)
-                sector = meta.get("industry", "Other")
+                industry = meta.get("industry", "Other")
+                is_etf = meta.get("isETFSec", False)
+                
+                if is_etf or industry == "Mutual Fund Scheme":
+                    sector = "ETFs & Mutual Funds"
+                else:
+                    sector = industry
+                    
                 sector_cache[nse_sym] = sector
             except: pass
 
