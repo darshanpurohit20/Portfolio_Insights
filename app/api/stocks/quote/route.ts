@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000"
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:7860"
 
 export async function GET(req: NextRequest) {
   try {
@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
       { 
         error: "Failed to fetch stock data", 
         message: error?.message,
-        hint: "Make sure the Python backend is running on " + (process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000")
+        hint: "Make sure the Python backend is running on " + (process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:7860")
       },
       { status: 500 }
     )

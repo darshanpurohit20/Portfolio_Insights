@@ -136,11 +136,11 @@ pip install -r requirements.txt
 python main.py
 ```
 
-Server will start at: `http://localhost:8000`
+Server will start at: `http://localhost:7860`
 
 Test it:
 ```bash
-curl "http://localhost:8000/api/stocks/quote?symbols=INFY.NS"
+curl "http://localhost:7860/api/stocks/quote?symbols=INFY.NS"
 ```
 
 ---
@@ -156,7 +156,7 @@ Update your Next.js frontend `.env` file:
 NEXT_PUBLIC_BACKEND_URL=https://darshanpurohit-portfolio-insight-backend.hf.space
 
 # OR for local development
-NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
+NEXT_PUBLIC_BACKEND_URL=http://localhost:7860
 ```
 
 ### Backend Configuration
@@ -170,7 +170,7 @@ No environment variables required. The backend is fully self-contained.
 ### Build Locally
 ```bash
 docker build -t portfolio-backend ./backend
-docker run -p 8000:8000 portfolio-backend
+docker run -p 7860:7860 portfolio-backend
 ```
 
 ### Using Docker Compose
