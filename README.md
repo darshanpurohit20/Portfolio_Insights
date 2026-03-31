@@ -13,13 +13,31 @@ A high-performance wealth management dashboard providing real-time insights into
 
 ## 📸 Screenshots
 
-| Dashboard Overview | Portfolio Allocation |
-| :---: | :---: |
-| ![Dashboard Placeholder](https://via.placeholder.com/600x400/1e1e2e/ffffff?text=Portfolio+Dashboard) | ![Charts Placeholder](https://via.placeholder.com/600x400/1e1e2e/ffffff?text=Diversification+Charts) |
+<div align="center">
 
-| Stock Cards & Search | Performance Sparklines |
-| :---: | :---: |
-| ![Cards Placeholder](https://via.placeholder.com/600x400/1e1e2e/ffffff?text=Stock+Cards) | ![Sparklines Placeholder](https://via.placeholder.com/600x400/1e1e2e/ffffff?text=Interactive+Sparklines) |
+<div style="border:1px solid #ddd; border-radius:10px; padding:10px; margin:20px; width:80%;">
+  <h3>📊 Dashboard Overview</h3>
+  <img src="https://github.com/user-attachments/assets/4cc469fd-4630-40e4-b276-b16a8b7b4c4b" width="100%" />
+</div>
+
+<div style="border:1px solid #ddd; border-radius:10px; padding:10px; margin:20px; width:80%;">
+  <h3>📈 Portfolio Allocation</h3>
+  <img src="https://github.com/user-attachments/assets/ff46bb4d-bba7-49ae-935f-41802f996b05" width="100%" />
+  <img width="1470" height="846" alt="image" src="https://github.com/user-attachments/assets/1d652ed2-d3a8-4e17-b1bd-5e3f7ed9873c" />
+
+</div>
+
+<div style="border:1px solid #ddd; border-radius:10px; padding:10px; margin:20px; width:80%;">
+  <h3>🔍 Stock Cards & Search</h3>
+  <img src="https://github.com/user-attachments/assets/546301fc-9437-4241-b4b2-8d1599cfe0ed" width="100%" />
+</div>
+
+<div style="border:1px solid #ddd; border-radius:10px; padding:10px; margin:20px; width:80%;">
+  <h3>📉 Performance Sparklines</h3>
+  <img src="https://github.com/user-attachments/assets/7da46d91-19a7-4874-b697-e545eda8a3ff" width="100%" />
+</div>
+
+</div>
 
 ## 🚀 Tech Stack
 
