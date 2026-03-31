@@ -6,6 +6,8 @@ from datetime import datetime, timedelta
 import pandas as pd
 import logging
 import time
+import os
+from groq import Groq
 from nsepython import nse_quote, nsefetch
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor
@@ -322,6 +324,74 @@ async def get_portfolio(data: Dict):
             "totalPnlPercent": round_percent(safe_divide(total_pnl, total_invested) * 100),
         }
     }
+
+@app.post("/api/portfolio/extract")
+async def extract_portfolio(payload: Dict):
+    image_data = payload.get("image")
+    if not image_data:
+        raise HTTPException(status_code=400, detail="No image provided")
+    
+    # Extract base64 part
+    base64_image = image_data
+    if "," in image_data:
+        base64_image = image_data.split(",")[1]
+
+    api_key = os.environ.get("GROQ_API_KEY")
+    if not api_key or api_key == "your_groq_api_key_here":
+        raise HTTPException(status_code=400, detail="GROQ_API_KEY not configured in backend")
+
+    try:
+        client = Groq(api_key=api_key)
+        
+        prompt = """
+        Analyze this stock portfolio screenshot and extract the holdings into a JSON array.
+        For each holding, extract:
+        - "symbol": The likely NSE stock symbol (e.g., RELIANCE, ITC, SBIN).
+        - "qty": The number of shares owned as a number.
+        - "buyPrice": The average buy price per share.
+        
+        IMPORTANT: Look for stock names like "ITC", "HDFC Bank", "Adani Green".
+        Extract the quantity which is usually below or beside the name (e.g. "70 shares").
+        
+        CALCULATION RULE for buyPrice:
+        If "Average Price" is visible, use it.
+        If NOT visible, look for "Last Price" and "P&L %" or "Returns %".
+        Calculate: buyPrice = Last Price / (1 + (Returns % / 100)).
+        Example: If Last Price is 100 and Returns is -10%, buyPrice = 100 / (1 - 0.1) = 111.11.
+        
+        Return ONLY a JSON object with the key "data" which is an array of these objects.
+        Example format: {"data": [{"symbol": "RELIANCE", "qty": 10, "buyPrice": 2500.50}]}
+        """
+        
+        completion = client.chat.completions.create(
+            model="meta-llama/llama-4-scout-17b-16e-instruct",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{base64_image}",
+                            },
+                        },
+                    ],
+                }
+            ],
+            response_format={"type": "json_object"},
+        )
+        
+        import json
+        content = completion.choices[0].message.content
+        logger.info(f"Extracted content: {content}")
+        return json.loads(content)
+        
+    except Exception as e:
+        logger.error(f"Groq Extraction Error: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn
