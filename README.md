@@ -72,7 +72,7 @@ The backend fetches live stock data from the NSE. To run it locally:
    ```
 4. Start the backend:
    ```bash
-   python main.py
+   python -m uvicorn main:app --host 0.0.0.0 --port 7860
    ```
    The backend will run on [http://localhost:7860](http://localhost:7860).
 

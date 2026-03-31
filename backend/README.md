@@ -133,7 +133,7 @@ pip install -r requirements.txt
 
 ### 3. Run the Server
 ```bash
-python main.py
+python -m uvicorn main:app --host 0.0.0.0 --port 7860
 ```
 
 Server will start at: `http://localhost:7860`
