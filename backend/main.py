@@ -327,19 +327,70 @@ async def get_portfolio(data: Dict):
 
 @app.post("/api/portfolio/extract")
 async def extract_portfolio(payload: Dict):
+    """
+    Enhanced production endpoint for portfolio extraction.
+    Includes comprehensive debugging for Hugging Face/Vercel environments.
+    """
+    import time
+    import json
+    import traceback
+    from fastapi.responses import JSONResponse
+    
+    start_time = time.time()
+    request_id = f"ocr_{int(start_time)}"
+    
+    # 1. Environment Debugging
+    is_prod = os.environ.get("SPACE_ID") is not None
+    api_key = os.environ.get("GROQ_API_KEY")
+    has_key = api_key is not None and api_key != "your_groq_api_key_here"
+    key_len = len(api_key) if api_key else 0
+    
+    logger.info(f"[{request_id}] >>> Extraction request received.")
+    logger.info(f"[{request_id}] Context: env={'prod' if is_prod else 'local'}, has_api_key={has_key}, key_len={key_len}")
+
+    # 2. Validate Input & Payload Size
     image_data = payload.get("image")
     if not image_data:
-        raise HTTPException(status_code=400, detail="No image provided")
-    
-    # Extract base64 part
+        logger.error(f"[{request_id}] FAILED: No image provided in request body")
+        return JSONResponse(
+            status_code=400,
+            content={"error": True, "stage": "validation", "message": "Missing image data", "details": "Payload did not contain 'image' key."}
+        )
+
+    payload_size_kb = len(image_data) / 1024
+    logger.info(f"[{request_id}] Payload size: {payload_size_kb:.2f} KB")
+
+    if payload_size_kb > 8192: # 8MB limit
+        logger.warning(f"[{request_id}] LARGE PAYLOAD: {payload_size_kb:.2f} KB detected.")
+
+    # 3. Detect MIME Type accurately
+    mime_type = "image/jpeg" 
     base64_image = image_data
+    
     if "," in image_data:
-        base64_image = image_data.split(",")[1]
+        try:
+            header, base64_image = image_data.split(",", 1)
+            if "image/" in header:
+                mime_type = header.split(":")[1].split(";")[0]
+            logger.info(f"[{request_id}] Extracted MIME type: {mime_type}")
+        except Exception as e:
+            logger.warning(f"[{request_id}] MIME parse failed: {e}. Using fallback image/jpeg")
 
-    api_key = os.environ.get("GROQ_API_KEY")
-    if not api_key or api_key == "your_groq_api_key_here":
-        raise HTTPException(status_code=400, detail="GROQ_API_KEY not configured in backend")
+    # 4. API Key Verification
+    if not has_key:
+        logger.error(f"[{request_id}] CRITICAL: GROQ_API_KEY is missing or unconfigured.")
+        return JSONResponse(
+            status_code=401,
+            content={
+                "error": True,
+                "stage": "auth_check",
+                "message": "Groq API key not configured in environment",
+                "details": "Ensure GROQ_API_KEY is set in Hugging Face Space secrets.",
+                "is_production": is_prod
+            }
+        )
 
+    # 5. Groq API Call with Timing & Safety
     try:
         client = Groq(api_key=api_key)
         
@@ -354,14 +405,16 @@ async def extract_portfolio(payload: Dict):
         Extract the quantity which is usually below or beside the name (e.g. "70 shares").
         
         CALCULATION RULE for buyPrice:
-        If "Average Price" is visible, use it.
+        If "Average Price" or "Avg Cost" is visible, use it.
         If NOT visible, look for "Last Price" and "P&L %" or "Returns %".
         Calculate: buyPrice = Last Price / (1 + (Returns % / 100)).
-        Example: If Last Price is 100 and Returns is -10%, buyPrice = 100 / (1 - 0.1) = 111.11.
         
         Return ONLY a JSON object with the key "data" which is an array of these objects.
-        Example format: {"data": [{"symbol": "RELIANCE", "qty": 10, "buyPrice": 2500.50}]}
+        Example: {"data": [{"symbol": "ITC", "qty": 100, "buyPrice": 450.50}]}
         """
+        
+        api_start_time = time.time()
+        logger.info(f"[{request_id}] Calling Groq API (meta-llama/llama-4-scout)...")
         
         completion = client.chat.completions.create(
             model="meta-llama/llama-4-scout-17b-16e-instruct",
@@ -373,25 +426,70 @@ async def extract_portfolio(payload: Dict):
                         {
                             "type": "image_url",
                             "image_url": {
-                                "url": f"data:image/jpeg;base64,{base64_image}",
+                                "url": f"data:{mime_type};base64,{base64_image}",
                             },
                         },
                     ],
                 }
             ],
             response_format={"type": "json_object"},
+            timeout=45.0 # Increased timeout for production stability
         )
         
-        import json
+        api_end_time = time.time()
+        api_duration = api_end_time - api_start_time
+        total_duration = api_end_time - start_time
+        
+        logger.info(f"[{request_id}] API SUCCESS: Response received in {api_duration:.2f}s")
+        
         content = completion.choices[0].message.content
-        logger.info(f"Extracted content: {content}")
-        return json.loads(content)
+        result = json.loads(content)
+        
+        # Log summary of found stocks
+        stocks_found = len(result.get("data", []))
+        logger.info(f"[{request_id}] Done. Found {stocks_found} stocks. Total time: {total_duration:.2f}s")
+        
+        return {
+            "success": True, 
+            "data": result.get("data", []),
+            "debug": {
+                "api_time_sec": round(api_duration, 2),
+                "total_time_sec": round(total_duration, 2),
+                "payload_size_kb": round(payload_size_kb, 2),
+                "mime": mime_type
+            }
+        }
         
     except Exception as e:
-        logger.error(f"Groq Extraction Error: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=str(e))
+        total_duration = time.time() - start_time
+        error_msg = str(e)
+        logger.error(f"[{request_id}] API FAILURE after {total_duration:.2f}s: {error_msg}")
+        logger.error(f"[{request_id}] Stacktrace: {traceback.format_exc()}")
+        
+        # Classify Error for easier debugging
+        stage = "api_call"
+        if "timeout" in error_msg.lower():
+            stage = "api_timeout"
+        elif "authentication" in error_msg.lower() or "401" in error_msg.lower():
+            stage = "api_auth"
+        elif "connection" in error_msg.lower() or "fetch" in error_msg.lower() or "httpx" in error_msg.lower():
+            stage = "network_issue"
+
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": True,
+                "stage": stage,
+                "message": f"Extraction failed: {error_msg}",
+                "details": {
+                    "request_id": request_id,
+                    "payload_size_kb": round(payload_size_kb, 2),
+                    "total_time_sec": round(total_duration, 2),
+                    "is_production": is_prod,
+                    "has_api_key": has_key
+                }
+            }
+        )
 
 if __name__ == "__main__":
     import uvicorn
