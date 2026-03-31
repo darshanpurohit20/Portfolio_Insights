@@ -112,6 +112,26 @@ lib/          # Types, Utilities, and Auth logic
 - [ ] Multi-broker import support
 - [ ] Export to PDF/CSV reports
 
+## 🌐 Production Deployment (Vercel + Hugging Face)
+
+To make the AI OCR feature work in production, you must link your Vercel frontend to your Hugging Face backend:
+
+### 1. Identify your Hugging Face URL
+Your backend URL usually looks like:
+`https://darshanpurohit20-portfolio-insights-backend.hf.space`
+
+### 2. Configure Vercel
+1. Go to your **Vercel Dashboard**.
+2. Navigate to **Settings > Environment Variables**.
+3. Add a new variable:
+   - **Key**: `NEXT_PUBLIC_HF_BACKEND_URL`
+   - **Value**: `https://<your-space-name>.hf.space`
+4. Click **Save**.
+5. **Redeploy** your project for the changes to take effect.
+
+> [!IMPORTANT]
+> Without this variable, the frontend will fallback to `/api/portfolio/extract` which will fail in production due to Vercel's payload limits.
+
 ## 📄 License
 
 MIT License.

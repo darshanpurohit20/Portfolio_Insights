@@ -92,11 +92,21 @@ export function PortfolioOCR({ onAddStocks }: PortfolioOCRProps) {
     
     setIsUploading(true)
     try {
-      // BYPASS Vercel Proxy and call Hugging Face directly
-      const hfBackendUrl = process.env.NEXT_PUBLIC_HF_BACKEND_URL || "http://localhost:7860"
-      const endpoint = `${hfBackendUrl}/api/portfolio/extract`
+      // 1. Detect Environment & Resolve Backend URL
+      const isProduction = process.env.NODE_ENV === "production"
+      const hfBackendUrl = process.env.NEXT_PUBLIC_HF_BACKEND_URL 
       
-      console.log(`[OCR DEBUG] Calling Backend: ${endpoint}`)
+      // Fallback for local development only
+      const resolvedBackendUrl = hfBackendUrl || (isProduction ? "" : "http://localhost:7860")
+      
+      if (isProduction && !hfBackendUrl) {
+        console.error("[OCR CRITICAL] NEXT_PUBLIC_HF_BACKEND_URL is missing in Vercel. Fix this in Vercel Dashboard > Settings > Environment Variables.")
+        throw new Error("Vercel Sync Required: NEXT_PUBLIC_HF_BACKEND_URL is missing in your deployment. Please add your Hugging Face Space URL to Vercel.")
+      }
+
+      const endpoint = `${resolvedBackendUrl}/api/portfolio/extract`
+      
+      console.log(`[OCR DEBUG] Calling Backend: ${endpoint} (Env: ${isProduction ? "PROD" : "LOCAL"})`)
       console.log(`[OCR DEBUG] Final Payload Size: ${(base64Image.length / 1024).toFixed(2)} KB`)
 
       const response = await fetch(endpoint, {
