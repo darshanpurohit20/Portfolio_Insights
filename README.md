@@ -11,6 +11,16 @@ A high-performance wealth management dashboard providing real-time insights into
 - **Real-time Tracking**: Live price updates and interactive sparklines for every holding.
 - **Smart OCR Import**: (In-Progress) AI-powered extraction from broker screenshots using Groq.
 
+## 📸 Screenshots
+
+| Dashboard Overview | Portfolio Allocation |
+| :---: | :---: |
+| ![Dashboard Placeholder](https://via.placeholder.com/600x400/1e1e2e/ffffff?text=Portfolio+Dashboard) | ![Charts Placeholder](https://via.placeholder.com/600x400/1e1e2e/ffffff?text=Diversification+Charts) |
+
+| Stock Cards & Search | Performance Sparklines |
+| :---: | :---: |
+| ![Cards Placeholder](https://via.placeholder.com/600x400/1e1e2e/ffffff?text=Stock+Cards) | ![Sparklines Placeholder](https://via.placeholder.com/600x400/1e1e2e/ffffff?text=Interactive+Sparklines) |
+
 ## 🚀 Tech Stack
 
 - **Frontend**: [Next.js 14](https://nextjs.org/) (App Router), [TypeScript](https://www.typescript.org/)
