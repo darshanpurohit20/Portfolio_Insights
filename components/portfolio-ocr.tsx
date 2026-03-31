@@ -17,6 +17,37 @@ export function PortfolioOCR({ onAddStocks }: PortfolioOCRProps) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [base64Image, setBase64Image] = useState<string | null>(null)
   const [extractedData, setExtractedData] = useState<any[] | null>(null)
+  const [compressionRatio, setCompressionRatio] = useState<number | null>(null)
+  
+  // Helper to compress image before sending to backend
+  const compressImage = (base64Str: string): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new HTMLImageElement()
+      img.src = base64Str
+      img.onload = () => {
+        const canvas = document.createElement("canvas")
+        const MAX_WIDTH = 1600 // High enough for OCR, small enough for payload
+        let width = img.width
+        let height = img.height
+
+        if (width > MAX_WIDTH) {
+          height *= MAX_WIDTH / width
+          width = MAX_WIDTH
+        }
+
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext("2d")
+        ctx?.drawImage(img, 0, 0, width, height)
+        
+        // JPEG 0.6 is ideal for OCR - keeps text sharp but nukes file size
+        const compressed = canvas.toDataURL("image/jpeg", 0.6)
+        resolve(compressed)
+      }
+      // Re-assign src to trigger onload if cached
+      img.src = base64Str
+    })
+  }
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -28,8 +59,26 @@ export function PortfolioOCR({ onAddStocks }: PortfolioOCRProps) {
     }
 
     const reader = new FileReader()
-    reader.onloadend = () => {
-      setBase64Image(reader.result as string)
+    reader.onloadend = async () => {
+      const originalBase64 = reader.result as string
+      const origSize = originalBase64.length / 1024
+      
+      console.log(`[OCR DEBUG] Original size: ${origSize.toFixed(2)} KB`)
+      setIsUploading(true)
+      
+      try {
+        const compressedBase64 = await compressImage(originalBase64)
+        const compSize = compressedBase64.length / 1024
+        setCompressionRatio(compSize / origSize)
+        
+        console.log(`[OCR DEBUG] Compressed size: ${compSize.toFixed(2)} KB (${((compSize/origSize)*100).toFixed(1)}%)`)
+        setBase64Image(compressedBase64)
+      } catch (err) {
+        console.error("[OCR DEBUG] Compression failed:", err)
+        setBase64Image(originalBase64)
+      } finally {
+        setIsUploading(false)
+      }
     }
     reader.readAsDataURL(file)
 
@@ -43,11 +92,23 @@ export function PortfolioOCR({ onAddStocks }: PortfolioOCRProps) {
     
     setIsUploading(true)
     try {
-      const response = await fetch("/api/portfolio/extract", {
+      // BYPASS Vercel Proxy and call Hugging Face directly
+      const hfBackendUrl = process.env.NEXT_PUBLIC_HF_BACKEND_URL || "http://localhost:7860"
+      const endpoint = `${hfBackendUrl}/api/portfolio/extract`
+      
+      console.log(`[OCR DEBUG] Calling Backend: ${endpoint}`)
+      console.log(`[OCR DEBUG] Final Payload Size: ${(base64Image.length / 1024).toFixed(2)} KB`)
+
+      const response = await fetch(endpoint, {
         method: "POST",
         body: JSON.stringify({ image: base64Image }),
-        headers: { "Content-Type": "application/json" }
+        headers: { 
+          "Content-Type": "application/json",
+          "Accept": "application/json"
+        }
       })
+
+      console.log(`[OCR DEBUG] Response Status: ${response.status} ${response.statusText}`)
 
       const result = await response.json()
       
