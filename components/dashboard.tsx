@@ -12,6 +12,7 @@ import { StockCards } from "@/components/stock-cards"
 import { PortfolioOCR } from "@/components/portfolio-ocr"
 import { AddStockDialog } from "@/components/add-stock-dialog"
 import { PriceAlerts } from "@/components/price-alerts"
+import { PortfolioCharts } from "@/components/portfolio-charts"
 import { TrendingUp, Plus, LogOut, RefreshCw, LayoutGrid, TableIcon, FileSearch } from "lucide-react"
 import type { PortfolioStock, PortfolioItem, PriceAlert } from "@/lib/types"
 
@@ -96,6 +97,8 @@ export function Dashboard({ username }: { username: string }) {
       change: q.change || 0,
       changePercent: q.changePercent || 0,
       history: q.history || [],
+      sector: q.sector || "Other",
+      capType: q.capType || "Small Cap",
     }
   })
 
@@ -244,6 +247,8 @@ export function Dashboard({ username }: { username: string }) {
       <main className="mx-auto max-w-7xl px-4 py-6">
         <div className="flex flex-col gap-6">
           <PortfolioSummary items={portfolioItems} loading={isLoading && !quotes} />
+          
+          <PortfolioCharts items={portfolioItems} />
 
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-foreground">Holdings</h2>

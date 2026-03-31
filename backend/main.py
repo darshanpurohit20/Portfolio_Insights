@@ -42,7 +42,7 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Portfolio API", version="6.0.0")
+app = FastAPI(title="Portfolio API", version="7.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -57,11 +57,12 @@ app.add_middleware(
 # ─────────────────────────────────────────
 price_cache: Dict[str, Any] = {}
 index_cache: Dict[str, Any] = {"data": {}, "updated_at": None}
+sector_cache: Dict[str, str] = {} # symbol -> industry
 
 CACHE_TTL = 60          # Fresh data
 STALE_TTL = 300         # Stale fallback
-INDEX_TTL = 300         # Nifty 500 cache TTL
-executor = ThreadPoolExecutor(max_workers=50) # INCREASED WORKERS For parallelism
+INDEX_TTL = 3600        # Nifty 500 cache TTL (1 hour)
+executor = ThreadPoolExecutor(max_workers=50)
 
 def get_from_cache(symbol: str) -> Tuple[Optional[Dict[str, Any]], bool]:
     """Returns (data, is_fresh)"""
@@ -87,7 +88,7 @@ def _nse_symbol(symbol: str) -> str:
 # BULK INDEX FETCHER (NEXT LEVEL SPEED)
 # ─────────────────────────────────────────
 def _refresh_index_cache(*args):
-    """Fetches Nifty 500 data in ONE request"""
+    """Fetches Nifty 500 data and ranks by Market Cap"""
     try:
         url = "https://www.nseindia.com/api/equity-stockIndices?index=NIFTY%20500"
         payload = nsefetch(url)
@@ -95,12 +96,23 @@ def _refresh_index_cache(*args):
         if not data:
             return
             
+        # Sort by Free Float Market Cap to determine Cap Type
+        sorted_data = sorted(data, key=lambda x: x.get("ffmc", 0), reverse=True)
+        
         new_cache = {}
-        for row in data:
+        for i, row in enumerate(sorted_data):
             sym = row.get("symbol", "")
             if not sym: continue
             
-            # Map from index fields to our standard format
+            # Classification based on rank
+            rank = i + 1
+            if rank <= 100:
+                cap_type = "Large Cap"
+            elif rank <= 250:
+                cap_type = "Mid Cap"
+            else:
+                cap_type = "Small Cap"
+
             mapped = {
                 "symbol": sym,
                 "currentPrice": round_price(row.get("lastPrice", 0)),
@@ -113,15 +125,14 @@ def _refresh_index_cache(*args):
                 "changePercent": round_percent(row.get("pChange", 0)),
                 "volume": row.get("totalTradedVolume", 0),
                 "openPrice": round_price(row.get("open", 0)),
-                "history": [], # Bulk doesn't have history
+                "history": [],
                 "source": "NSE Nifty 500 Index",
+                "sector": "Other", # Will be patched if known
+                "capType": cap_type,
                 "error": False,
                 "cachedAt": datetime.now().isoformat(),
             }
             new_cache[sym] = mapped
-            # Also update main price cache for direct lookups
-            if sym not in price_cache or (datetime.now() - price_cache[sym]["cached_at"]).total_seconds() > CACHE_TTL:
-                price_cache[sym] = {"data": mapped, "cached_at": datetime.now()}
             
         index_cache["data"] = new_cache
         index_cache["updated_at"] = datetime.now()
@@ -136,13 +147,22 @@ def _get_single_stock_data(symbol: str) -> Optional[Dict]:
     """Fallback fetch for a single stock using nsepython"""
     nse_sym = _nse_symbol(symbol)
     try:
-        # Quote
+        # 1. Quote
         url = f"https://www.nseindia.com/api/quote-equity?symbol={nse_sym}"
         data = nsefetch(url)
-        
         price_info = data.get("priceInfo", {})
         if not price_info:
             return None
+
+        # 2. Industry Metadata (Cached for 1 day)
+        sector = sector_cache.get(nse_sym, "Other")
+        if sector == "Other":
+            try:
+                meta_url = f"https://www.nseindia.com/api/equity-meta-info?symbol={nse_sym}"
+                meta = nsefetch(meta_url)
+                sector = meta.get("industry", "Other")
+                sector_cache[nse_sym] = sector
+            except: pass
 
         intra = price_info.get("intraDayHighLow", {})
         week = price_info.get("weekHighLow", {})
@@ -151,26 +171,6 @@ def _get_single_stock_data(symbol: str) -> Optional[Dict]:
         
         change = current - prev_close
         change_pct = safe_divide(change, prev_close) * 100.0
-
-        # History (Limited to 30 days)
-        history = []
-        try:
-            to_date = datetime.now()
-            from_date = to_date - timedelta(days=40)
-            hist_url = (
-                f"https://www.nseindia.com/api/historical/cm/equity"
-                f'?symbol={nse_sym}&series=["EQ","BE","ETF"]'
-                f'&from={from_date.strftime("%d-%m-%Y")}'
-                f'&to={to_date.strftime("%d-%m-%Y")}'
-                f'&csv=false'
-            )
-            hist_data = nsefetch(hist_url)
-            rows = hist_data.get("data", [])
-            history = [
-                {"date": row.get("CH_TIMESTAMP", ""), "close": float(row.get("CH_CLOSING_PRICE", 0))}
-                for row in rows[-30:]
-            ]
-        except: pass
 
         result = {
             "symbol": symbol,
@@ -184,8 +184,10 @@ def _get_single_stock_data(symbol: str) -> Optional[Dict]:
             "changePercent": round_percent(change_pct),
             "volume": 0,
             "openPrice": round_price(price_info.get("open", 0)),
-            "history": history,
+            "history": [],
             "source": "NSE India (Direct Fallback)",
+            "sector": sector,
+            "capType": "Small Cap", # Fallback for non-index stocks
             "error": False,
             "cachedAt": datetime.now().isoformat(),
         }
@@ -196,7 +198,7 @@ def _get_single_stock_data(symbol: str) -> Optional[Dict]:
         logger.error(f"Error fetching {symbol}: {e}")
         return None
 
-async def get_stock_data_bulk(symbols: List[str]) -> Dict[str, Dict]:
+async def get_stock_data_bulk(symbols: List[str]) -> Dict[str, Any]:
     results = {}
     to_fetch = []
     
@@ -210,6 +212,9 @@ async def get_stock_data_bulk(symbols: List[str]) -> Dict[str, Dict]:
         nse_s = _nse_symbol(s)
         data, is_fresh = get_from_cache(nse_s)
         if data:
+            # Patch sector if missing from index cache (initially "Other")
+            if data.get("sector") == "Other" and nse_s in sector_cache:
+                data["sector"] = sector_cache[nse_s]
             results[s] = data
             if not is_fresh:
                 to_fetch.append(s)
@@ -219,9 +224,16 @@ async def get_stock_data_bulk(symbols: List[str]) -> Dict[str, Dict]:
     if not to_fetch:
         return results
 
-    # 3. Parallel fetch missing/stale items (Fallback to 50 workers)
+    # Parallel fetch missing/stale items
     loop = asyncio.get_event_loop()
-    tasks = [loop.run_in_executor(executor, _get_single_stock_data, s) for s in to_fetch]
+    tasks = []
+    for s in to_fetch:
+        tasks.append(loop.run_in_executor(executor, _get_single_stock_data, s))
+    
+    # Also fetch industry for items in results that have "Other" sector (e.g. from index cache)
+    for s, data in results.items():
+        if data.get("sector") == "Other" and s not in [t for t in to_fetch]:
+             tasks.append(loop.run_in_executor(executor, _get_single_stock_data, s))
     
     if tasks:
         fetched_results = await asyncio.gather(*tasks)
@@ -229,7 +241,7 @@ async def get_stock_data_bulk(symbols: List[str]) -> Dict[str, Dict]:
             if fetched_results[i]:
                 results[s] = fetched_results[i]
             elif s not in results:
-                results[s] = _error_result(s, "Fetch failed after fallback")
+                results[s] = _error_result(s, "Fetch failed")
 
     return results
 
@@ -239,6 +251,7 @@ def _error_result(symbol: str, msg: str) -> Dict:
         "dayHigh": 0, "dayLow": 0, "high52w": 0, "low52w": 0,
         "previousClose": 0, "change": 0, "changePercent": 0, "volume": 0,
         "openPrice": 0, "history": [], "source": "ERROR", "error": True, "errorMsg": msg,
+        "sector": "Other", "capType": "Unknown"
     }
 
 # ─────────────────────────────────────────
@@ -247,7 +260,7 @@ def _error_result(symbol: str, msg: str) -> Dict:
 
 @app.get("/")
 async def root():
-    return {"status": "ok", "version": "6.0.0", "index_size": len(index_cache["data"])}
+    return {"status": "ok", "version": "7.0.0", "index_size": len(index_cache["data"])}
 
 @app.get("/api/stocks/quote")
 async def get_quotes(symbols: str):
@@ -270,7 +283,8 @@ async def get_portfolio(data: Dict):
     for symbol, h in symbol_map.items():
         qty = float(h["qty"])
         buy = float(h["buyPrice"])
-        current = float(stock_data.get(symbol, {}).get("currentPrice", 0))
+        s_data = stock_data.get(symbol, {})
+        current = float(s_data.get("currentPrice", 0))
 
         invested = qty * buy
         value = qty * current
@@ -287,6 +301,8 @@ async def get_portfolio(data: Dict):
             "currentValue": round_money(value),
             "pnl": round_money(pnl),
             "pnlPercent": round_percent(safe_divide(pnl, invested) * 100),
+            "sector": s_data.get("sector", "Other"),
+            "capType": s_data.get("capType", "Small Cap"),
         })
 
     total_pnl = total_value - total_invested

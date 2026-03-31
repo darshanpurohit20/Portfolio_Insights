@@ -5,6 +5,8 @@ export interface PortfolioStock {
   name: string
   qty: number
   buyPrice: number
+  sector?: string
+  capType?: string
 }
 
 export interface StockQuote {
@@ -38,6 +40,8 @@ export interface PortfolioItem extends PortfolioStock {
   change: number
   changePercent: number
   history: { date: string; close: number }[]
+  sector: string
+  capType: string
 }
 
 export interface PriceAlert {
