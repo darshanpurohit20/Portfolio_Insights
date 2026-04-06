@@ -491,6 +491,124 @@ async def extract_portfolio(payload: Dict):
             }
         )
 
+# ─────────────────────────────────────────
+# SCHEDULED REPORTS (APScheduler)
+# ─────────────────────────────────────────
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+import json
+import report_generator
+from fastapi import Response
+
+REPORTS_FILE = os.path.join(os.path.dirname(__file__), "reports.json")
+
+def load_reports():
+    if os.path.exists(REPORTS_FILE):
+        with open(REPORTS_FILE, "r") as f:
+            return json.load(f)
+    return {}
+
+def save_reports(data):
+    with open(REPORTS_FILE, "w") as f:
+        json.dump(data, f)
+
+async def _job_send_scheduled_reports(frequency):
+    logger.info(f"Running scheduled report job for frequency: {frequency}")
+    reports = load_reports()
+    for email, prefs in reports.items():
+        if prefs.get("enabled") and prefs.get("frequency") == frequency:
+            portfolio = prefs.get("portfolio", [])
+            if not portfolio: continue
+            
+            # Fetch Live Prices
+            symbols = [h["symbol"] for h in portfolio]
+            stock_data = await get_stock_data_bulk(symbols)
+            
+            # Calculate summary
+            portfolio_items = []
+            total_invested = 0
+            total_value = 0
+            
+            for h in portfolio:
+                sym = h["symbol"]
+                qty = float(h["qty"])
+                buy = float(h["buyPrice"])
+                s_data = stock_data.get(sym, {})
+                current = float(s_data.get("currentPrice", 0))
+                
+                inv = qty * buy
+                val = qty * current
+                pnl = val - inv
+                total_invested += inv
+                total_value += val
+                
+                portfolio_items.append({
+                    "symbol": sym, "qty": qty, "buyPrice": buy,
+                    "currentPrice": current, "invested": inv,
+                    "currentValue": val, "pnl": pnl,
+                    "pnlPercent": (pnl / inv * 100) if inv else 0
+                })
+                
+            total_pnl = total_value - total_invested
+            summary_stats = {
+                "totalInvested": total_invested,
+                "totalValue": total_value,
+                "totalPnl": total_pnl,
+                "totalPnlPercent": (total_pnl / total_invested * 100) if total_invested else 0
+            }
+            
+            # Generate and Send
+            buffer = report_generator.generate_pdf_buffer(portfolio_items, summary_stats)
+            report_generator.send_portfolio_email(email, buffer)
+
+scheduler = AsyncIOScheduler()
+scheduler.add_job(_job_send_scheduled_reports, 'cron', hour=18, minute=0, args=["Daily"], id="daily_reports", replace_existing=True)
+scheduler.add_job(_job_send_scheduled_reports, 'cron', day_of_week='fri', hour=18, minute=0, args=["Weekly"], id="weekly_reports", replace_existing=True)
+scheduler.add_job(_job_send_scheduled_reports, 'cron', day='last', hour=18, minute=0, args=["Monthly"], id="monthly_reports", replace_existing=True)
+
+@app.on_event("startup")
+async def start_scheduler():
+    scheduler.start()
+    logger.info("APScheduler started")
+
+@app.on_event("shutdown")
+async def shutdown_scheduler():
+    scheduler.shutdown()
+
+@app.post("/api/report/schedule")
+async def schedule_report(data: Dict):
+    email = data.get("email")
+    if not email: raise HTTPException(status_code=400, detail="Missing email")
+    
+    reports = load_reports()
+    reports[email] = {
+        "enabled": data.get("enabled", False),
+        "frequency": data.get("frequency", "Weekly"),
+        "portfolio": data.get("portfolio", [])
+    }
+    save_reports(reports)
+    return {"status": "success"}
+
+@app.post("/api/report/generate")
+async def generate_report(data: Dict):
+    email = data.get("email")
+    portfolio = data.get("portfolio", [])
+    if not email or not portfolio:
+        raise HTTPException(status_code=400, detail="Missing email or portfolio")
+        
+    total_invested = sum(item.get("invested", 0) for item in portfolio)
+    total_value = sum(item.get("currentValue", 0) for item in portfolio)
+    total_pnl = total_value - total_invested
+    
+    summary_stats = {
+        "totalInvested": total_invested,
+        "totalValue": total_value,
+        "totalPnl": total_pnl,
+        "totalPnlPercent": (total_pnl / total_invested * 100) if total_invested else 0
+    }
+    
+    buffer = report_generator.generate_pdf_buffer(portfolio, summary_stats)
+    return Response(content=buffer.read(), media_type="application/pdf")
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=7860)

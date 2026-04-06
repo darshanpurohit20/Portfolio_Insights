@@ -1,46 +1,17 @@
 "use client"
 
 import { useState } from "react"
-import { useRouter } from "next/navigation"
+import { signIn } from "next-auth/react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { TrendingUp, Lock, User } from "lucide-react"
+import { TrendingUp, Mail } from "lucide-react"
 
 export function LoginForm() {
-  const [username, setUsername] = useState("")
-  const [password, setPassword] = useState("")
-  const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
-  const router = useRouter()
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setError("")
+  async function handleGoogleLogin() {
     setLoading(true)
-
-    try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
-      })
-
-      const data = await res.json()
-
-      if (!res.ok) {
-        setError(data.error || "Login failed")
-        return
-      }
-
-      router.push("/dashboard")
-      router.refresh()
-    } catch {
-      setError("Network error. Please try again.")
-    } finally {
-      setLoading(false)
-    }
+    await signIn("google", { redirectTo: "/dashboard" })
   }
 
   return (
@@ -58,50 +29,19 @@ export function LoginForm() {
           <CardHeader className="pb-4">
             <CardTitle className="text-lg text-card-foreground">Sign In</CardTitle>
             <CardDescription>
-              Default credentials: admin / admin123
+              Sign in with your Google account to track your portfolio.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="username" className="text-foreground">Username</Label>
-                <div className="relative">
-                  <User className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    id="username"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    placeholder="Enter username"
-                    className="pl-10 bg-secondary text-foreground border-border placeholder:text-muted-foreground"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="password" className="text-foreground">Password</Label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    id="password"
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Enter password"
-                    className="pl-10 bg-secondary text-foreground border-border placeholder:text-muted-foreground"
-                    required
-                  />
-                </div>
-              </div>
-
-              {error && (
-                <p className="text-sm text-loss">{error}</p>
-              )}
-
-              <Button type="submit" disabled={loading} className="w-full bg-primary text-primary-foreground hover:bg-primary/90">
-                {loading ? "Signing in..." : "Sign In"}
-              </Button>
-            </form>
+            <Button 
+              onClick={handleGoogleLogin} 
+              disabled={loading} 
+              variant="outline" 
+              className="w-full border-border bg-secondary text-foreground hover:bg-secondary/80 flex items-center justify-center gap-2"
+            >
+              <Mail className="h-4 w-4" />
+              {loading ? "Signing in..." : "Continue with Google"}
+            </Button>
           </CardContent>
         </Card>
 
