@@ -110,7 +110,38 @@ lib/          # Types, Utilities, and Auth logic
 - [x] Editable Holdings Management
 - [/] AI-Powered Portfolio OCR Extraction
 - [ ] Multi-broker import support
-- [ ] Export to PDF/CSV reports
+- [x] Export to PDF reports & Scheduled Emails
+- [x] Google / Gmail OAuth Integration
+
+## 🔐 NextAuth & Scheduled Reports Setup (New Features)
+
+We have recently integrated **NextAuth v5** for Google Login and an **APScheduler** backend task to email PDF reports. 
+
+If you are developing these features, please ensure you configure your local environment:
+
+### 1. Google OAuth Configuration
+1. Go to the [Google Cloud Console](https://console.cloud.google.com/).
+2. Create a new project and configure the OAuth consent screen.
+3. Create OAuth Client ID credentials. Add `http://localhost:3000/api/auth/callback/google` as an Authorized Redirect URI.
+4. Add your created keys to `.env.local`:
+   ```env
+   GOOGLE_CLIENT_ID=your_generated_client_id
+   GOOGLE_CLIENT_SECRET=your_generated_client_secret
+   NEXTAUTH_SECRET=your_random_secret_string # You can generate this using `openssl rand -base64 32`
+   NEXTAUTH_URL=http://localhost:3000
+   ```
+
+### 2. Email Delivery Configuration
+The backend uses Python's built-in `smtplib` to send emails via Gmail.
+1. You must use an **App Password** (not your regular Gmail password). 
+2. Go to your Google Account > Security > 2-Step Verification > App passwords and generate one.
+3. Add the credentials to your `.env.local`:
+   ```env
+   SENDER_EMAIL=your.email@gmail.com
+   SENDER_APP_PASSWORD=your_16_digit_app_password
+   ```
+
+**Note on Background Scheduler:** As long as these environment variables are set and the backend is running (`python backend/main.py`), the APScheduler will automatically poll user preferences from `reports.json` and send out customized emails at 6 PM IST. You can also trigger an immediate PDF download directly from the dashboard settings!
 
 ## 🌐 Production Deployment (Vercel + Hugging Face)
 

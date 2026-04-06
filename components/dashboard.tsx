@@ -13,7 +13,10 @@ import { PortfolioOCR } from "@/components/portfolio-ocr"
 import { AddStockDialog } from "@/components/add-stock-dialog"
 import { PriceAlerts } from "@/components/price-alerts"
 import { PortfolioCharts } from "@/components/portfolio-charts"
-import { TrendingUp, Plus, LogOut, RefreshCw, LayoutGrid, TableIcon, FileSearch } from "lucide-react"
+import { ReportSettingsDialog } from "@/components/report-settings"
+import { TrendingUp, Plus, LogOut, RefreshCw, LayoutGrid, TableIcon, FileSearch, Settings, FileText } from "lucide-react"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { signOut, useSession } from "next-auth/react"
 import type { PortfolioStock, PortfolioItem, PriceAlert } from "@/lib/types"
 
 const STORAGE_KEY = "stockfolio-portfolio"
@@ -194,16 +197,14 @@ export function Dashboard({ username }: { username: string }) {
   }
 
   async function handleLogout() {
-    await fetch("/api/auth/logout", { method: "POST" })
-    router.push("/")
-    router.refresh()
+    await signOut({ callbackUrl: "/" })
   }
 
   if (!mounted) return null
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60">
         <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4">
           <div className="flex items-center gap-3">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
@@ -220,26 +221,34 @@ export function Dashboard({ username }: { username: string }) {
               onRemoveAlert={removeAlert}
               onToggleAlert={toggleAlert}
             />
+            <ReportSettingsDialog portfolioItems={portfolioItems} />
             <Button
               variant="outline"
               size="icon"
               onClick={() => mutate()}
               disabled={isLoading}
-              className="border-border text-foreground hover:bg-secondary"
+              className="border-border text-foreground hover:bg-secondary hidden sm:flex"
             >
               <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
               <span className="sr-only">Refresh data</span>
             </Button>
-            <span className="hidden text-sm text-muted-foreground sm:inline">{username}</span>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleLogout}
-              className="text-muted-foreground hover:text-loss"
-            >
-              <LogOut className="h-4 w-4" />
-              <span className="sr-only">Log out</span>
-            </Button>
+
+            <div className="flex items-center gap-2 ml-2 border-l border-border pl-4">
+              <Avatar className="h-8 w-8">
+                <AvatarImage src={undefined /* will be handled via session if available in useSession but for now doing it via props below */} alt={username} />
+                <AvatarFallback className="bg-primary/20 text-primary text-xs">{username.substring(0, 2).toUpperCase()}</AvatarFallback>
+              </Avatar>
+              <span className="hidden text-sm font-medium text-foreground sm:inline mr-2">{username}</span>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleLogout}
+                className="text-muted-foreground hover:text-loss h-8 w-8"
+              >
+                <LogOut className="h-4 w-4" />
+                <span className="sr-only">Log out</span>
+              </Button>
+            </div>
           </div>
         </div>
       </header>
@@ -247,7 +256,7 @@ export function Dashboard({ username }: { username: string }) {
       <main className="mx-auto max-w-7xl px-4 py-6">
         <div className="flex flex-col gap-6">
           <PortfolioSummary items={portfolioItems} loading={isLoading && !quotes} />
-          
+
           <PortfolioCharts items={portfolioItems} />
 
           <div className="flex items-center justify-between">
