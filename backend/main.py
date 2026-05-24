@@ -64,7 +64,7 @@ sector_cache: Dict[str, str] = {} # symbol -> industry
 CACHE_TTL = 60          # Fresh data
 STALE_TTL = 300         # Stale fallback
 INDEX_TTL = 3600        # Nifty 500 cache TTL (1 hour)
-executor = ThreadPoolExecutor(max_workers=50)
+executor = ThreadPoolExecutor(max_workers=2)
 
 def get_from_cache(symbol: str) -> Tuple[Optional[Dict[str, Any]], bool]:
     """Returns (data, is_fresh)"""
