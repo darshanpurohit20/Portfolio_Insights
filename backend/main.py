@@ -1,12 +1,11 @@
 import asyncio
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from typing import Dict, List, Any, Optional, Tuple, cast
-from datetime import datetime, timedelta
-import pandas as pd
+from typing import Dict, List, Any, Optional, Tuple
 import logging
 import time
 import os
+from datetime import datetime
 from groq import Groq
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor
@@ -59,12 +58,10 @@ app.add_middleware(
 # ─────────────────────────────────────────
 price_cache: Dict[str, Any] = {}
 index_cache: Dict[str, Any] = {"data": {}, "updated_at": None}
-sector_cache: Dict[str, str] = {} # symbol -> industry
 
 CACHE_TTL = 60          # Fresh data
 STALE_TTL = 300         # Stale fallback
-INDEX_TTL = 3600        # Nifty 500 cache TTL (1 hour)
-executor = ThreadPoolExecutor(max_workers=50)
+executor = ThreadPoolExecutor(max_workers=10)
 
 def get_from_cache(symbol: str) -> Tuple[Optional[Dict[str, Any]], bool]:
     """Returns (data, is_fresh)"""
@@ -76,15 +73,28 @@ def get_from_cache(symbol: str) -> Tuple[Optional[Dict[str, Any]], bool]:
             return cached_item["data"], True
         elif age < STALE_TTL:
             return cached_item["data"], False
-
-    # 2. Check Index Cache (Nifty 500)
-    if symbol in index_cache["data"]:
-        return index_cache["data"][symbol], True
         
     return None, False
 
-def _nse_symbol(symbol: str) -> str:
+def _normalize_symbol(symbol: str) -> str:
     return symbol.upper().replace(".NS", "").replace(".BO", "").strip()
+
+def _market_cap_to_crore_rupees(market_cap: Optional[float]) -> float:
+    try:
+        if market_cap is None:
+            return 0.0
+        return float(market_cap) / 1e7
+    except (TypeError, ValueError):
+        return 0.0
+
+def _classify_market_cap(market_cap_crore: float) -> str:
+    if market_cap_crore >= 20000:
+        return "Large Cap"
+    if market_cap_crore >= 5000:
+        return "Mid Cap"
+    if market_cap_crore > 0:
+        return "Small Cap"
+    return "Unknown"
 
 # ─────────────────────────────────────────
 # BULK INDEX FETCHER (NEXT LEVEL SPEED)
@@ -208,9 +218,10 @@ def _nse_symbol(symbol: str) -> str:
 #         return None
 
 
-def _get_single_stock_data(symbol: str) -> Optional[Dict]:
+def _get_single_stock_data(symbol: str) -> Dict:
     try:
-        yf_symbol = symbol.upper()
+        base_symbol = _normalize_symbol(symbol)
+        yf_symbol = base_symbol
 
         # Add .NS automatically if missing
         if not yf_symbol.endswith(".NS"):
@@ -218,35 +229,41 @@ def _get_single_stock_data(symbol: str) -> Optional[Dict]:
 
         ticker = yf.Ticker(yf_symbol)
 
-        fast = ticker.fast_info
+        fast = ticker.fast_info or {}
+        info = ticker.info or {}
 
-        current = float(info.get("currentPrice") or 0)
-        prev_close = float(info.get("previousClose") or 0)
+        current = float(fast.get("lastPrice") or 0)
+        prev_close = float(fast.get("previousClose") or 0)
 
         change = current - prev_close
         change_pct = safe_divide(change, prev_close) * 100
 
+        market_cap = info.get("marketCap")
+        market_cap_crore = _market_cap_to_crore_rupees(market_cap)
+        cap_type = _classify_market_cap(market_cap_crore)
+
         result = {
-            "symbol": symbol,
+            "symbol": base_symbol,
             "currentPrice": round_price(current),
-            "dayHigh": round_price(info.get("dayHigh", 0)),
-            "dayLow": round_price(info.get("dayLow", 0)),
-            "high52w": round_price(info.get("fiftyTwoWeekHigh", 0)),
-            "low52w": round_price(info.get("fiftyTwoWeekLow", 0)),
+            "dayHigh": round_price(fast.get("dayHigh", 0)),
+            "dayLow": round_price(fast.get("dayLow", 0)),
+            "high52w": round_price(fast.get("yearHigh", 0)),
+            "low52w": round_price(fast.get("yearLow", 0)),
             "previousClose": round_price(prev_close),
             "change": round_percent(change),
             "changePercent": round_percent(change_pct),
-            "volume": info.get("volume", 0),
-            "openPrice": round_price(info.get("open", 0)),
+            "volume": fast.get("volume", 0),
+            "openPrice": round_price(fast.get("open", 0)),
             "history": [],
             "source": "Yahoo Finance",
-            "sector": info.get("sector", "Other"),
-            "capType": "Unknown",
+            "sector": info.get("sector", "Other") or "Other",
+            "marketCap": market_cap or 0,
+            "capType": cap_type,
             "error": False,
             "cachedAt": datetime.now().isoformat(),
         }
 
-        price_cache[symbol] = {
+        price_cache[base_symbol] = {
             "data": result,
             "cached_at": datetime.now()
         }
@@ -254,8 +271,8 @@ def _get_single_stock_data(symbol: str) -> Optional[Dict]:
         return result
 
     except Exception as e:
-        logger.error(f"Yahoo Finance fetch failed for {symbol}: {e}")
-        return None
+        logger.exception(f"Yahoo Finance fetch failed for {symbol}: {e}")
+        return _error_result(symbol, str(e))
     
 
 async def get_stock_data_bulk(symbols: List[str]) -> Dict[str, Any]:
@@ -267,14 +284,11 @@ async def get_stock_data_bulk(symbols: List[str]) -> Dict[str, Any]:
     #     loop = asyncio.get_event_loop()
     #     await loop.run_in_executor(executor, _refresh_index_cache)
 
-    # 2. Check cache (Index + Price)
+    # 2. Check cache (Price only)
     for s in symbols:
-        nse_s = _nse_symbol(s)
-        data, is_fresh = get_from_cache(nse_s)
+        base_symbol = _normalize_symbol(s)
+        data, is_fresh = get_from_cache(base_symbol)
         if data:
-            # Patch sector if missing from index cache (initially "Other")
-            if data.get("sector") == "Other" and nse_s in sector_cache:
-                data["sector"] = sector_cache[nse_s]
             results[s] = data
             if not is_fresh:
                 to_fetch.append(s)
@@ -289,11 +303,6 @@ async def get_stock_data_bulk(symbols: List[str]) -> Dict[str, Any]:
     tasks = []
     for s in to_fetch:
         tasks.append(loop.run_in_executor(executor, _get_single_stock_data, s))
-    
-    # Also fetch industry for items in results that have "Other" sector (e.g. from index cache)
-    for s, data in results.items():
-        if data.get("sector") == "Other" and s not in [t for t in to_fetch]:
-             tasks.append(loop.run_in_executor(executor, _get_single_stock_data, s))
     
     if tasks:
         fetched_results = await asyncio.gather(*tasks)
@@ -311,7 +320,7 @@ def _error_result(symbol: str, msg: str) -> Dict:
         "dayHigh": 0, "dayLow": 0, "high52w": 0, "low52w": 0,
         "previousClose": 0, "change": 0, "changePercent": 0, "volume": 0,
         "openPrice": 0, "history": [], "source": "ERROR", "error": True, "errorMsg": msg,
-        "sector": "Other", "capType": "Unknown"
+        "sector": "Other", "marketCap": 0, "capType": "Unknown", "cachedAt": datetime.now().isoformat()
     }
 
 # ─────────────────────────────────────────
