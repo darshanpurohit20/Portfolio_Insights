@@ -8,9 +8,9 @@ import logging
 import time
 import os
 from groq import Groq
-from nsepython import nse_quote, nsefetch
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor
+import yfinance as yf
 
 # ─────────────────────────────────────────
 # SIMPLE ROUNDING (INLINE - NO IMPORTS)
@@ -64,7 +64,7 @@ sector_cache: Dict[str, str] = {} # symbol -> industry
 CACHE_TTL = 60          # Fresh data
 STALE_TTL = 300         # Stale fallback
 INDEX_TTL = 3600        # Nifty 500 cache TTL (1 hour)
-executor = ThreadPoolExecutor(max_workers=2)
+executor = ThreadPoolExecutor(max_workers=50)
 
 def get_from_cache(symbol: str) -> Tuple[Optional[Dict[str, Any]], bool]:
     """Returns (data, is_fresh)"""
@@ -89,132 +89,183 @@ def _nse_symbol(symbol: str) -> str:
 # ─────────────────────────────────────────
 # BULK INDEX FETCHER (NEXT LEVEL SPEED)
 # ─────────────────────────────────────────
-def _refresh_index_cache(*args):
-    """Fetches Nifty 500 data and ranks by Market Cap"""
-    try:
-        url = "https://www.nseindia.com/api/equity-stockIndices?index=NIFTY%20500"
-        payload = nsefetch(url)
-        data = payload.get("data", [])
-        if not data:
-            return
+# def _refresh_index_cache(*args):
+#     """Fetches Nifty 500 data and ranks by Market Cap"""
+#     try:
+#         url = "https://www.nseindia.com/api/equity-stockIndices?index=NIFTY%20500"
+#         payload = nsefetch(url)
+#         data = payload.get("data", [])
+#         if not data:
+#             return
             
-        # Sort by Free Float Market Cap to determine Cap Type
-        sorted_data = sorted(data, key=lambda x: x.get("ffmc", 0), reverse=True)
+#         # Sort by Free Float Market Cap to determine Cap Type
+#         sorted_data = sorted(data, key=lambda x: x.get("ffmc", 0), reverse=True)
         
-        new_cache = {}
-        for i, row in enumerate(sorted_data):
-            sym = row.get("symbol", "")
-            if not sym: continue
+#         new_cache = {}
+#         for i, row in enumerate(sorted_data):
+#             sym = row.get("symbol", "")
+#             if not sym: continue
             
-            # Classification based on rank
-            rank = i + 1
-            if rank <= 100:
-                cap_type = "Large Cap"
-            elif rank <= 250:
-                cap_type = "Mid Cap"
-            else:
-                cap_type = "Small Cap"
+#             # Classification based on rank
+#             rank = i + 1
+#             if rank <= 100:
+#                 cap_type = "Large Cap"
+#             elif rank <= 250:
+#                 cap_type = "Mid Cap"
+#             else:
+#                 cap_type = "Small Cap"
 
-            mapped = {
-                "symbol": sym,
-                "currentPrice": round_price(row.get("lastPrice", 0)),
-                "dayHigh": round_price(row.get("dayHigh", 0)),
-                "dayLow": round_price(row.get("dayLow", 0)),
-                "high52w": round_price(row.get("yearHigh", 0)),
-                "low52w": round_price(row.get("yearLow", 0)),
-                "previousClose": round_price(row.get("previousClose", 0)),
-                "change": round_percent(row.get("change", 0)),
-                "changePercent": round_percent(row.get("pChange", 0)),
-                "volume": row.get("totalTradedVolume", 0),
-                "openPrice": round_price(row.get("open", 0)),
-                "history": [],
-                "source": "NSE Nifty 500 Index",
-                "sector": "Other", # Will be patched if known
-                "capType": cap_type,
-                "error": False,
-                "cachedAt": datetime.now().isoformat(),
-            }
-            new_cache[sym] = mapped
+#             mapped = {
+#                 "symbol": sym,
+#                 "currentPrice": round_price(row.get("lastPrice", 0)),
+#                 "dayHigh": round_price(row.get("dayHigh", 0)),
+#                 "dayLow": round_price(row.get("dayLow", 0)),
+#                 "high52w": round_price(row.get("yearHigh", 0)),
+#                 "low52w": round_price(row.get("yearLow", 0)),
+#                 "previousClose": round_price(row.get("previousClose", 0)),
+#                 "change": round_percent(row.get("change", 0)),
+#                 "changePercent": round_percent(row.get("pChange", 0)),
+#                 "volume": row.get("totalTradedVolume", 0),
+#                 "openPrice": round_price(row.get("open", 0)),
+#                 "history": [],
+#                 "source": "NSE Nifty 500 Index",
+#                 "sector": "Other", # Will be patched if known
+#                 "capType": cap_type,
+#                 "error": False,
+#                 "cachedAt": datetime.now().isoformat(),
+#             }
+#             new_cache[sym] = mapped
             
-        index_cache["data"] = new_cache
-        index_cache["updated_at"] = datetime.now()
-        logger.info(f"Refreshed Nifty 500 Index Cache with {len(new_cache)} symbols")
-    except Exception as e:
-        logger.error(f"Failed to refresh index cache: {e}")
+#         index_cache["data"] = new_cache
+#         index_cache["updated_at"] = datetime.now()
+#         logger.info(f"Refreshed Nifty 500 Index Cache with {len(new_cache)} symbols")
+#     except Exception as e:
+#         logger.error(f"Failed to refresh index cache: {e}")
 
 # ─────────────────────────────────────────
 # FETCH LOGIC (PARALLEL)
 # ─────────────────────────────────────────
-def _get_single_stock_data(symbol: str) -> Optional[Dict]:
-    """Fallback fetch for a single stock using nsepython"""
-    nse_sym = _nse_symbol(symbol)
-    try:
-        # 1. Quote
-        url = f"https://www.nseindia.com/api/quote-equity?symbol={nse_sym}"
-        data = nsefetch(url)
-        price_info = data.get("priceInfo", {})
-        if not price_info:
-            return None
+# def _get_single_stock_data(symbol: str) -> Optional[Dict]:
+#     """Fallback fetch for a single stock using nsepython"""
+#     nse_sym = _nse_symbol(symbol)
+#     try:
+#         # 1. Quote
+#         url = f"https://www.nseindia.com/api/quote-equity?symbol={nse_sym}"
+#         data = nsefetch(url)
+#         price_info = data.get("priceInfo", {})
+#         if not price_info:
+#             return None
 
-        # 2. Industry Metadata (Cached for 1 day)
-        sector = sector_cache.get(nse_sym, "Other")
-        if sector == "Other":
-            try:
-                meta_url = f"https://www.nseindia.com/api/equity-meta-info?symbol={nse_sym}"
-                meta = nsefetch(meta_url)
-                industry = meta.get("industry", "Other")
-                is_etf = meta.get("isETFSec", False)
+#         # 2. Industry Metadata (Cached for 1 day)
+#         sector = sector_cache.get(nse_sym, "Other")
+#         if sector == "Other":
+#             try:
+#                 meta_url = f"https://www.nseindia.com/api/equity-meta-info?symbol={nse_sym}"
+#                 meta = nsefetch(meta_url)
+#                 industry = meta.get("industry", "Other")
+#                 is_etf = meta.get("isETFSec", False)
                 
-                if is_etf or industry == "Mutual Fund Scheme":
-                    sector = "ETFs & Mutual Funds"
-                else:
-                    sector = industry
+#                 if is_etf or industry == "Mutual Fund Scheme":
+#                     sector = "ETFs & Mutual Funds"
+#                 else:
+#                     sector = industry
                     
-                sector_cache[nse_sym] = sector
-            except: pass
+#                 sector_cache[nse_sym] = sector
+#             except: pass
 
-        intra = price_info.get("intraDayHighLow", {})
-        week = price_info.get("weekHighLow", {})
-        current = float(price_info.get("lastPrice", 0))
-        prev_close = float(price_info.get("previousClose", 0))
+#         intra = price_info.get("intraDayHighLow", {})
+#         week = price_info.get("weekHighLow", {})
+#         current = float(price_info.get("lastPrice", 0))
+#         prev_close = float(price_info.get("previousClose", 0))
         
+#         change = current - prev_close
+#         change_pct = safe_divide(change, prev_close) * 100.0
+
+#         result = {
+#             "symbol": symbol,
+#             "currentPrice": round_price(current),
+#             "dayHigh": round_price(intra.get("max", 0)),
+#             "dayLow": round_price(intra.get("min", 0)),
+#             "high52w": round_price(week.get("max", 0)),
+#             "low52w": round_price(week.get("min", 0)),
+#             "previousClose": round_price(prev_close),
+#             "change": round_percent(change),
+#             "changePercent": round_percent(change_pct),
+#             "volume": 0,
+#             "openPrice": round_price(price_info.get("open", 0)),
+#             "history": [],
+#             "source": "NSE India (Direct Fallback)",
+#             "sector": sector,
+#             "capType": "Small Cap", # Fallback for non-index stocks
+#             "error": False,
+#             "cachedAt": datetime.now().isoformat(),
+#         }
+        
+#         price_cache[symbol] = {"data": result, "cached_at": datetime.now()}
+#         return result
+#     except Exception as e:
+#         logger.error(f"Error fetching {symbol}: {e}")
+#         return None
+
+
+def _get_single_stock_data(symbol: str) -> Optional[Dict]:
+    try:
+        yf_symbol = symbol.upper()
+
+        # Add .NS automatically if missing
+        if not yf_symbol.endswith(".NS"):
+            yf_symbol = f"{yf_symbol}.NS"
+
+        ticker = yf.Ticker(yf_symbol)
+
+        fast = ticker.fast_info
+
+        current = float(info.get("currentPrice") or 0)
+        prev_close = float(info.get("previousClose") or 0)
+
         change = current - prev_close
-        change_pct = safe_divide(change, prev_close) * 100.0
+        change_pct = safe_divide(change, prev_close) * 100
 
         result = {
             "symbol": symbol,
             "currentPrice": round_price(current),
-            "dayHigh": round_price(intra.get("max", 0)),
-            "dayLow": round_price(intra.get("min", 0)),
-            "high52w": round_price(week.get("max", 0)),
-            "low52w": round_price(week.get("min", 0)),
+            "dayHigh": round_price(info.get("dayHigh", 0)),
+            "dayLow": round_price(info.get("dayLow", 0)),
+            "high52w": round_price(info.get("fiftyTwoWeekHigh", 0)),
+            "low52w": round_price(info.get("fiftyTwoWeekLow", 0)),
             "previousClose": round_price(prev_close),
             "change": round_percent(change),
             "changePercent": round_percent(change_pct),
-            "volume": 0,
-            "openPrice": round_price(price_info.get("open", 0)),
+            "volume": info.get("volume", 0),
+            "openPrice": round_price(info.get("open", 0)),
             "history": [],
-            "source": "NSE India (Direct Fallback)",
-            "sector": sector,
-            "capType": "Small Cap", # Fallback for non-index stocks
+            "source": "Yahoo Finance",
+            "sector": info.get("sector", "Other"),
+            "capType": "Unknown",
             "error": False,
             "cachedAt": datetime.now().isoformat(),
         }
-        
-        price_cache[symbol] = {"data": result, "cached_at": datetime.now()}
+
+        price_cache[symbol] = {
+            "data": result,
+            "cached_at": datetime.now()
+        }
+
         return result
+
     except Exception as e:
-        logger.error(f"Error fetching {symbol}: {e}")
+        logger.error(f"Yahoo Finance fetch failed for {symbol}: {e}")
         return None
+    
 
 async def get_stock_data_bulk(symbols: List[str]) -> Dict[str, Any]:
     results = {}
     to_fetch = []
     
-    # 1. Update Index Cache if empty or stale
-    if not index_cache["updated_at"] or (datetime.now() - index_cache["updated_at"]).total_seconds() > INDEX_TTL:
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(executor, _refresh_index_cache)
+    # # 1. Update Index Cache if empty or stale
+    # if not index_cache["updated_at"] or (datetime.now() - index_cache["updated_at"]).total_seconds() > INDEX_TTL:
+    #     loop = asyncio.get_event_loop()
+    #     await loop.run_in_executor(executor, _refresh_index_cache)
 
     # 2. Check cache (Index + Price)
     for s in symbols:
