@@ -32,6 +32,7 @@ from datetime import datetime, timedelta
 from threading import Semaphore
 from typing import Any, Dict, List, Optional, Tuple
 
+import requests
 import yfinance as yf
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
@@ -201,10 +202,12 @@ async def global_exception_handler(request: Request, exc: Exception):
 # ─────────────────────────────────────────
 price_cache: Dict[str, Any] = {}      # fast-moving: price, OHLC, volume
 meta_cache: Dict[str, Any] = {}       # slow-moving: sector, marketCap, capType
+search_cache: Dict[str, Any] = {}     # ticker autocomplete results
 
 PRICE_TTL = 90          # seconds — fresh
 PRICE_STALE_TTL = 300   # seconds — usable-but-stale fallback
 META_TTL = timedelta(hours=6)  # sector/marketCap barely change
+SEARCH_TTL = timedelta(minutes=10)    # autocomplete results barely change
 
 MAX_CONCURRENT_YF_CALLS = 3   # actual cap on simultaneous Yahoo hits
 executor = ThreadPoolExecutor(max_workers=10)
@@ -272,6 +275,69 @@ def _fetch_info(ticker: yf.Ticker) -> Dict[str, Any]:
     if data is None:
         raise ValueError("info returned None")
     return dict(data)
+
+
+YAHOO_SEARCH_URL = "https://query1.finance.yahoo.com/v1/finance/search"
+YAHOO_SEARCH_HEADERS = {
+    # Yahoo blocks the default python-requests UA outright
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+    )
+}
+
+
+@retry(max_attempts=2, base_delay=0.5, backoff=2.0, exceptions=(Exception,))
+def _fetch_yahoo_search(query: str) -> List[Dict[str, Any]]:
+    resp = requests.get(
+        YAHOO_SEARCH_URL,
+        params={"q": query, "quotesCount": 10, "newsCount": 0, "listsCount": 0},
+        headers=YAHOO_SEARCH_HEADERS,
+        timeout=6,
+    )
+    if resp.status_code == 429:
+        raise RuntimeError("Too Many Requests. Rate limited by Yahoo search.")
+    resp.raise_for_status()
+    payload = resp.json()
+    quotes = payload.get("quotes", [])
+
+    results = []
+    for q in quotes:
+        symbol = q.get("symbol")
+        if not symbol:
+            continue
+        # Only keep tradable equity-like instruments — skip options/futures noise
+        quote_type = (q.get("quoteType") or "").upper()
+        if quote_type not in ("EQUITY", "ETF", "INDEX", "MUTUALFUND", "CRYPTOCURRENCY", "CURRENCY"):
+            continue
+        results.append({
+            "symbol": symbol,
+            "name": q.get("longname") or q.get("shortname") or symbol,
+            "exchange": q.get("exchange") or q.get("exchDisp") or "",
+            "quoteType": quote_type,
+        })
+    return results
+
+
+@timed("search_tickers")
+def _search_tickers(query: str) -> List[Dict[str, Any]]:
+    cache_key = query.strip().upper()
+    cached = search_cache.get(cache_key)
+    if cached and datetime.now() - cached["cached_at"] < SEARCH_TTL:
+        return cached["data"]
+
+    with yf_semaphore:  # search hits Yahoo too — keep it under the same concurrency cap
+        try:
+            results = _fetch_yahoo_search(query)
+        except Exception as e:
+            logger.warning(f"[SEARCH] query '{query}' failed: {e}")
+            # Serve stale cache instead of nothing, if we have any
+            if cached:
+                return cached["data"]
+            return []
+
+    search_cache[cache_key] = {"data": results, "cached_at": datetime.now()}
+    return results
 
 
 def _get_meta(symbol: str, yf_symbol: str, ticker: yf.Ticker) -> Dict[str, Any]:
@@ -491,6 +557,23 @@ async def get_portfolio(data: Dict):
     except Exception as e:
         logger.exception("[ENDPOINT] /api/stocks/portfolio failed")
         raise HTTPException(status_code=500, detail=f"Portfolio calculation failed: {e}")
+
+
+@app.get("/api/stocks/search")
+@timed("GET /api/stocks/search")
+async def search_stocks(q: str):
+    q = (q or "").strip()
+    if len(q) < 1:
+        return {"results": []}
+    try:
+        loop = asyncio.get_event_loop()
+        results = await loop.run_in_executor(executor, _search_tickers, q)
+        return {"results": results}
+    except Exception as e:
+        # Search is a nice-to-have — never fail the request, just return nothing
+        # so the frontend's static-list fallback takes over.
+        logger.exception(f"[ENDPOINT] /api/stocks/search failed for '{q}'")
+        return {"results": [], "error": str(e)}
 
 
 @app.post("/api/portfolio/extract")
