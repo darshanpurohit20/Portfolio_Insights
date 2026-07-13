@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect } from "react"
 import {
   Dialog,
   DialogContent,
@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button"
 import { Search, Plus } from "lucide-react"
 import type { NseStock } from "@/lib/nse-stocks"
 import type { PortfolioStock } from "@/lib/types"
+import { useStockSearch } from "@/hooks/use-stock-search"
 
 interface Props {
   open: boolean
@@ -25,13 +26,15 @@ interface Props {
 
 export function AddStockDialog({ open, onOpenChange, onSubmit, initialData }: Props) {
   const [query, setQuery] = useState("")
-  const [results, setResults] = useState<NseStock[]>([])
   const [selected, setSelected] = useState<NseStock | null>(null)
   const [qty, setQty] = useState("")
   const [buyPrice, setBuyPrice] = useState("")
-  const [searching, setSearching] = useState(false)
 
   const isEdit = !!initialData
+
+  // Pass "" while editing so the hook doesn't search — the static-list
+  // path returns [] for an empty query, same effect as the old isEdit guard.
+  const { results, isLoading: searching } = useStockSearch(isEdit ? "" : query)
 
   useEffect(() => {
     if (initialData) {
@@ -48,33 +51,9 @@ export function AddStockDialog({ open, onOpenChange, onSubmit, initialData }: Pr
     }
   }, [initialData])
 
-  const searchStocks = useCallback(async (q: string) => {
-    if (isEdit || q.length < 1) {
-      setResults([])
-      return
-    }
-    setSearching(true)
-    try {
-      const res = await fetch(`/api/stocks/search?q=${encodeURIComponent(q)}`)
-      const data = await res.json()
-      setResults(data)
-    } catch {
-      setResults([])
-    } finally {
-      setSearching(false)
-    }
-  }, [isEdit])
-
-  useEffect(() => {
-    if (isEdit) return
-    const timer = setTimeout(() => searchStocks(query), 300)
-    return () => clearTimeout(timer)
-  }, [query, searchStocks, isEdit])
-
   function handleSelect(stock: NseStock) {
     setSelected(stock)
     setQuery(stock.name)
-    setResults([])
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -99,8 +78,9 @@ export function AddStockDialog({ open, onOpenChange, onSubmit, initialData }: Pr
     setSelected(null)
     setQty("")
     setBuyPrice("")
-    setResults([])
   }
+
+  const showDropdown = results.length > 0 && !selected && !isEdit
 
   return (
     <Dialog
@@ -139,7 +119,7 @@ export function AddStockDialog({ open, onOpenChange, onSubmit, initialData }: Pr
               />
             </div>
 
-            {results.length > 0 && !selected && !isEdit && (
+            {showDropdown && (
               <div className="max-h-48 overflow-y-auto rounded-lg border border-border bg-secondary">
                 {results.map((stock) => (
                   <button
